@@ -1,0 +1,53 @@
+name: CI
+
+# service-api(Spring Boot) PR 자동 검사
+# main / develop 로 향하는 PR과 해당 브랜치 push 시 실행
+
+on:
+  pull_request:
+    branches: [main, develop]
+  push:
+    branches: [main, develop]
+
+# 같은 브랜치에서 새 커밋이 오면 이전 실행은 취소 (CI 시간 절약)
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build & Test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"        # 프로젝트 Java 버전에 맞게 조정
+          cache: gradle
+
+      - name: Grant execute permission for gradlew
+        run: chmod +x ./gradlew
+
+      # build 태스크가 compile + test + lint(있다면)까지 함께 수행
+      - name: Build & Test
+        run: ./gradlew build --no-daemon
+
+  secret-scan:
+    name: Secret scan
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0          # git 히스토리 전체를 스캔하기 위해
+
+      # gitleaks: API Key / .env / 토큰이 커밋됐는지 검사
+      # 도커 이미지는 오픈소스·무료 (조직 라이선스 불필요)
+      - name: Gitleaks
+        run: >
+          docker run --rm -v "$PWD:/repo" ghcr.io/gitleaks/gitleaks:latest
+          detect --source /repo --redact --verbose

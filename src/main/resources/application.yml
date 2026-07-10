@@ -1,0 +1,37 @@
+server:
+  port: 8080
+
+spring:
+  datasource:
+    # docker-compose 가 주입(DB_*). 로컬 단독 실행 시 localhost 기본값.
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/bambi}
+    username: ${DB_USER:bambi}
+    password: ${DB_PASSWORD:bambi}
+  jpa:
+    hibernate:
+      # 배포 규약: 스키마는 Flyway 가 소유. JPA 는 검증만 한다.
+      ddl-auto: validate
+    properties:
+      hibernate:
+        # 모든 엔티티는 service 스키마에 매핑 (agent 스키마는 agent-api 소유)
+        default_schema: service
+        format_sql: true
+    open-in-view: false
+  flyway:
+    enabled: true
+    # V1__init.sql 이 service/agent 스키마를 CREATE 한다. history 테이블은 service 에.
+    schemas: service
+    default-schema: service
+
+app:
+  # docker-compose 가 주입하는 환경변수 (없으면 기본값)
+  version: ${APP_VERSION:0.0.1}
+  color: ${APP_COLOR:blue}
+  jwt:
+    # 운영 환경에선 반드시 JWT_SECRET 주입 (HS256 → 최소 32바이트)
+    secret: ${JWT_SECRET:dev-only-secret-change-me-please-0123456789abcdef}
+    expiration-minutes: ${JWT_EXPIRATION_MINUTES:120}
+  admin:
+    # 서버 시작 시 두 값이 모두 있으면 ADMIN 계정을 seed 한다 (없으면 skip)
+    email: ${ADMIN_EMAIL:}
+    password: ${ADMIN_PASSWORD:}
