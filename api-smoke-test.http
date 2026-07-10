@@ -1,0 +1,56 @@
+### 밤새비서 인증 슬라이스 스모크 테스트 (IntelliJ HTTP Client)
+### 사용법: 앱이 떠 있으면 각 요청 왼쪽의 초록 ▶ 를 위에서부터 순서대로 클릭.
+###   - docker compose 로 띄운 경우:  @host = http://localhost   (nginx, 80포트)
+###   - IntelliJ 에서 앱만 직접 실행한 경우:  @host = http://localhost:8080 로 바꾸기
+@host = http://localhost
+
+### 1) 헬스체크  — DB 무관하게 200 {"status":"UP"} 이어야 정상
+GET {{host}}/api/health
+
+### 2) 회원가입  — 성공 시 success:true, data 안에 사용자 정보
+POST {{host}}/api/auth/signup
+Content-Type: application/json
+
+{
+  "email": "woosuk@bambi.com",
+  "password": "test1234",
+  "displayName": "우석"
+}
+
+### 3) 로그인  — accessToken 이 나오면 자동 저장(아래 요청들이 재사용)
+POST {{host}}/api/auth/login
+Content-Type: application/json
+
+{
+  "email": "woosuk@bambi.com",
+  "password": "test1234"
+}
+
+> {%
+    client.test("로그인 200 + 토큰 발급", function() {
+        client.assert(response.status === 200, "status가 200이 아님: " + response.status);
+        client.assert(response.body.data.accessToken != null, "accessToken이 없음");
+    });
+    client.global.set("token", response.body.data.accessToken);
+%}
+
+### 4) 내 정보  — 토큰 있어야 200. (인증 필터가 제대로 동작하는지 확인)
+GET {{host}}/api/auth/me
+Authorization: Bearer {{token}}
+
+### 5) 노트 생성  — 로그인 사용자로 reference CRUD 동작 확인
+POST {{host}}/api/notes
+Content-Type: application/json
+Authorization: Bearer {{token}}
+
+{
+  "title": "첫 노트",
+  "content": "인증 세로 슬라이스 동작 확인용"
+}
+
+### 6) 노트 목록  — 방금 만든 노트가 보이면 CRUD OK
+GET {{host}}/api/notes
+Authorization: Bearer {{token}}
+
+### 7) (음성 테스트) 토큰 없이 /me  — 401 이 나와야 정상 (인가가 막고 있다는 증거)
+GET {{host}}/api/auth/me
