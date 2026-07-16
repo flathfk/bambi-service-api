@@ -54,3 +54,60 @@ Authorization: Bearer {{token}}
 
 ### 7) (음성 테스트) 토큰 없이 /me  — 401 이 나와야 정상 (인가가 막고 있다는 증거)
 GET {{host}}/api/auth/me
+
+### ──────────────── 저장→카드→피드 세로 슬라이스 (영현) ────────────────
+
+### 8) URL/본문 저장  — 201 + bookmark(status=DONE) + 즉시 카드 1장(card)
+POST {{host}}/api/bookmarks
+Content-Type: application/json
+Authorization: Bearer {{token}}
+
+{
+  "url": "https://blog.langchain.dev/langgraph-multi-agent",
+  "title": "LangGraph로 멀티 에이전트 구성하기",
+  "content": "LangGraph 를 사용해 멀티 에이전트 워크플로를 구성하는 방법을 다룬 글."
+}
+
+> {%
+    client.test("저장 201 + 즉시 카드 1장", function() {
+        client.assert(response.status === 201, "status가 201이 아님: " + response.status);
+        client.assert(response.body.data.bookmark.status === "DONE", "bookmark가 DONE이 아님");
+        client.assert(response.body.data.card.title != null, "card가 없음");
+        client.assert(response.body.data.card.sources.length > 0, "card에 출처가 없음");
+    });
+%}
+
+### 9) 북마크 목록  — 방금 저장한 북마크(요약 포함)가 보이면 OK
+GET {{host}}/api/bookmarks
+Authorization: Bearer {{token}}
+
+### 10) 카드 피드  — 방금 만든 카드가 최신순으로 보이면 세로 슬라이스 관통 성공 🎉
+GET {{host}}/api/feed
+Authorization: Bearer {{token}}
+
+> {%
+    client.test("피드에 카드 존재", function() {
+        client.assert(response.status === 200, "status가 200이 아님: " + response.status);
+        client.assert(response.body.data.length > 0, "피드가 비어 있음");
+        client.assert(response.body.data[0].sources.length > 0, "카드에 출처가 없음");
+    });
+%}
+
+### 11) (음성 테스트) 같은 URL 재저장  — 409 DUPLICATE_RESOURCE 가 나와야 정상
+POST {{host}}/api/bookmarks
+Content-Type: application/json
+Authorization: Bearer {{token}}
+
+{
+  "url": "https://blog.langchain.dev/langgraph-multi-agent",
+  "title": "LangGraph로 멀티 에이전트 구성하기"
+}
+
+### 12) (음성 테스트) url/content 둘 다 없이 저장  — 400 VALIDATION_ERROR 가 나와야 정상
+POST {{host}}/api/bookmarks
+Content-Type: application/json
+Authorization: Bearer {{token}}
+
+{
+  "title": "제목만 있는 요청"
+}
