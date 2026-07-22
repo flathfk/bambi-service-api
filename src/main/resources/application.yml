@@ -43,3 +43,12 @@ app:
     # 컨텍스트 동기화는 202 폴링이 아니라 가벼운 동기 호출(200) → 짧게.
     connect-timeout-ms: ${AGENT_CONNECT_TIMEOUT_MS:2000}
     read-timeout-ms: ${AGENT_READ_TIMEOUT_MS:3000}
+  worker:
+    # service-worker 발행 폴링 루프 (docs/service-integration-guide.md §4)
+    publish:
+      enabled: ${WORKER_PUBLISH_ENABLED:true}        # false 면 워커 빈 비활성
+      worker-id: ${WORKER_ID:service-worker-01}
+      poll-interval-ms: ${WORKER_POLL_INTERVAL_MS:15000}   # 10~30초 권장
+      initial-delay-ms: ${WORKER_INITIAL_DELAY_MS:10000}
+      batch-limit: ${WORKER_BATCH_LIMIT:50}
+      lease-seconds: ${WORKER_LEASE_SECONDS:120}

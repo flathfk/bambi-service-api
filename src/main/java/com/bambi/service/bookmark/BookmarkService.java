@@ -5,6 +5,7 @@ import com.bambi.service.agent.dto.BookmarkProcessRequest;
 import com.bambi.service.agent.dto.BookmarkProcessResponse;
 import com.bambi.service.agent.dto.CardGenerateRequest;
 import com.bambi.service.agent.dto.CardGenerateResponse;
+import com.bambi.service.agent.publish.MockPublishInbox;
 import com.bambi.service.bookmark.dto.BookmarkCreateRequest;
 import com.bambi.service.bookmark.dto.BookmarkCreateResponse;
 import com.bambi.service.bookmark.dto.BookmarkDetailResponse;
@@ -32,13 +33,16 @@ public class BookmarkService {
     private final BookmarkRepository bookmarkRepository;
     private final CardRepository cardRepository;
     private final AgentClient agentClient;
+    private final MockPublishInbox publishInbox;
 
     public BookmarkService(BookmarkRepository bookmarkRepository,
                            CardRepository cardRepository,
-                           AgentClient agentClient) {
+                           AgentClient agentClient,
+                           MockPublishInbox publishInbox) {
         this.bookmarkRepository = bookmarkRepository;
         this.cardRepository = cardRepository;
         this.agentClient = agentClient;
+        this.publishInbox = publishInbox;
     }
 
     @Transactional
@@ -86,6 +90,25 @@ public class BookmarkService {
         Bookmark bookmark = bookmarkRepository.findByIdAndUserIdAndDeletedAtIsNull(bookmarkId, userId)
                 .orElseThrow(() -> new ApiException(ErrorCode.NOT_FOUND, "북마크를 찾을 수 없습니다."));
         return BookmarkDetailResponse.from(bookmark);
+    }
+
+    /**
+     * 비동기 재처리 요청 — agent 의 심화 발행(Pull)을 흉내낸다.
+     * 동기 즉시 카드와 별개로, 발행 큐에 항목을 넣으면 service-worker 가 폴링으로 집어
+     * 잠시 뒤 심화 카드를 발행한다("처리중 → 도착"). 계약상 202 Accepted 성격.
+     * content_id 는 bookmark 기준 결정적 값이라 같은 북마크 재요청은 멱등(카드 1장).
+     */
+    @Transactional(readOnly = true)
+    public void requestReprocess(Long userId, Long bookmarkId) {
+        Bookmark bookmark = bookmarkRepository.findByIdAndUserIdAndDeletedAtIsNull(bookmarkId, userId)
+                .orElseThrow(() -> new ApiException(ErrorCode.NOT_FOUND, "북마크를 찾을 수 없습니다."));
+        String contentId = "bookmark-" + bookmark.getId();
+        publishInbox.enqueue(
+                userId,
+                contentId,
+                (bookmark.getTitle() != null ? bookmark.getTitle() : "저장한 콘텐츠") + " — 심화 브리핑",
+                bookmark.getTitle(),
+                bookmark.getUrl());
     }
 
     /** Agent 응답의 첫 카드를 저장한다. 카드가 없거나 출처가 비면 저장하지 않는다(출처 없는 카드 금지). */

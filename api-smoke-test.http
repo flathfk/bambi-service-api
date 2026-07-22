@@ -111,3 +111,20 @@ Authorization: Bearer {{token}}
 {
   "title": "제목만 있는 요청"
 }
+
+### ──────────── service-worker 비동기 발행 폴링 (영현) ────────────
+### 흐름: 8)에서 저장한 북마크를 비동기 재처리 → 워커가 폴링으로 심화 카드 발행
+### (8번 저장 응답의 bookmark.id 를 아래 {{bookmarkId}} 에 넣거나, 8번에 캡처 추가)
+
+### 13) 비동기 재처리 요청  — 202 Accepted (즉시 응답, 카드는 잠시 뒤 도착)
+POST {{host}}/api/bookmarks/1/reprocess
+Authorization: Bearer {{token}}
+
+### 14) (폴링) 피드 재조회  — 몇 초 뒤 "… — 심화 브리핑" 카드가 1장 더 늘어야 정상
+###     워커 주기(기본 15초) 감안해 잠시 후 실행. status 폴링으로 "처리중→도착" UX 근거.
+GET {{host}}/api/feed
+Authorization: Bearer {{token}}
+
+### 15) 같은 북마크 재처리 반복  — 202 지만, 피드 카드 수는 안 늘어야(멱등 발행)
+POST {{host}}/api/bookmarks/1/reprocess
+Authorization: Bearer {{token}}
