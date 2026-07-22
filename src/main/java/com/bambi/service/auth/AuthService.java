@@ -9,7 +9,9 @@ import com.bambi.service.common.error.ErrorCode;
 import com.bambi.service.user.Role;
 import com.bambi.service.user.RoleRepository;
 import com.bambi.service.user.User;
+import com.bambi.service.user.UserRegisteredEvent;
 import com.bambi.service.user.UserRepository;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -23,15 +25,18 @@ public class AuthService {
     private final RoleRepository roleRepository;
     private final PasswordEncoder passwordEncoder;
     private final JwtTokenProvider tokenProvider;
+    private final ApplicationEventPublisher eventPublisher;
 
     public AuthService(UserRepository userRepository,
                        RoleRepository roleRepository,
                        PasswordEncoder passwordEncoder,
-                       JwtTokenProvider tokenProvider) {
+                       JwtTokenProvider tokenProvider,
+                       ApplicationEventPublisher eventPublisher) {
         this.userRepository = userRepository;
         this.roleRepository = roleRepository;
         this.passwordEncoder = passwordEncoder;
         this.tokenProvider = tokenProvider;
+        this.eventPublisher = eventPublisher;
     }
 
     @Transactional
@@ -45,6 +50,9 @@ public class AuthService {
         User user = new User(req.email(), passwordEncoder.encode(req.password()), req.displayName());
         user.addRole(userRole);
         userRepository.save(user);
+
+        // 가입 커밋 후 agent 에 컨텍스트를 1회 동기화한다(리스너가 AFTER_COMMIT 처리, 실패해도 가입 유지).
+        eventPublisher.publishEvent(new UserRegisteredEvent(user.getId()));
         return UserSummary.from(user);
     }
 

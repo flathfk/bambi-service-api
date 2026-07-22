@@ -10,15 +10,16 @@ import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 
 import java.time.OffsetDateTime;
 
 /**
  * Service → Agent 요청 로그 (service.ai_request_logs).
  *
- * 관리자 화면에서 읽기 전용으로만 쓰므로, 조회에 필요한 컬럼만 매핑한다.
- * request_body(jsonb)는 화면에 안 쓰고 매핑 부담만 크므로 일부러 뺐다.
- * (적재는 실제 AgentGateway=P1 몫 — 지금 이 테이블은 비어 있다.)
+ * 관리자 화면 조회 + AgentGateway 적재(P1) 양쪽에서 쓴다.
+ * 조회는 endpoint·user·created_at 만 쓰고, request_body(jsonb)는 적재 시에만 채운다.
  */
 @Entity
 @Table(name = "ai_request_logs")
@@ -34,13 +35,25 @@ public class AiRequestLog {
     private User user;
 
     @Column(nullable = false)
-    private String endpoint; // 호출한 agent 엔드포인트 (예: /agent/bookmarks/process)
+    private String endpoint; // 호출한 agent 엔드포인트 (예: /internal/v1/users/{id}/context)
+
+    // 요청 본문(jsonb). 조회 화면엔 안 쓰지만 적재 시 남긴다. null 허용.
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "request_body")
+    private String requestBody;
 
     // DB default(now())가 채운다. 읽기 전용이라 삽입/수정 대상에서 뺀다.
     @Column(name = "created_at", nullable = false, insertable = false, updatable = false)
     private OffsetDateTime createdAt;
 
     protected AiRequestLog() {
+    }
+
+    /** 적재용. user 는 null 가능(호출 주체가 사용자와 무관한 경우). request_body 는 JSON 문자열. */
+    public AiRequestLog(User user, String endpoint, String requestBody) {
+        this.user = user;
+        this.endpoint = endpoint;
+        this.requestBody = requestBody;
     }
 
     public Long getId() {

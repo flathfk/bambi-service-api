@@ -6,6 +6,8 @@ import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 
 import java.time.OffsetDateTime;
 
@@ -13,7 +15,7 @@ import java.time.OffsetDateTime;
  * Agent → Service 응답 로그 (service.ai_response_logs).
  *
  * 요청 한 건에 대한 처리 결과. 요청이 있는데 응답 Row 가 아직 없으면 = 처리 중으로 본다.
- * request_id 로 {@link AiRequestLog} 와 이어지며, response_body(jsonb)는 화면에 안 써 매핑하지 않는다.
+ * request_id 로 {@link AiRequestLog} 와 이어진다. response_body(jsonb)는 적재 시에만 채운다.
  */
 @Entity
 @Table(name = "ai_response_logs")
@@ -29,6 +31,11 @@ public class AiResponseLog {
     @Column(name = "status_code")
     private Integer statusCode; // HTTP 상태코드. 2xx=성공, 그 외=실패
 
+    // 응답 본문(jsonb). 성공 응답 또는 에러 바디를 남긴다. null 허용.
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "response_body")
+    private String responseBody;
+
     @Column(name = "latency_ms")
     private Integer latencyMs; // 처리 소요시간(ms)
 
@@ -36,6 +43,14 @@ public class AiResponseLog {
     private OffsetDateTime createdAt;
 
     protected AiResponseLog() {
+    }
+
+    /** 적재용. request_id 로 요청 로그와 연결. */
+    public AiResponseLog(Long requestId, Integer statusCode, Integer latencyMs, String responseBody) {
+        this.requestId = requestId;
+        this.statusCode = statusCode;
+        this.latencyMs = latencyMs;
+        this.responseBody = responseBody;
     }
 
     public Long getRequestId() {

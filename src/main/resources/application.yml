@@ -35,6 +35,14 @@ app:
     # 서버 시작 시 두 값이 모두 있으면 ADMIN 계정을 seed 한다 (없으면 skip)
     email: ${ADMIN_EMAIL:}
     password: ${ADMIN_PASSWORD:}
+  agent:
+    # agent-api(FastAPI) 내부 호출 주소. 내부망 전용이라 인증 없음(배포 전 협의).
+    base-url: ${AGENT_API_BASE:http://localhost:8000}
+    # 내부 API prefix (agent 계약: /internal/v1)
+    internal-prefix: ${AGENT_API_PREFIX:/internal/v1}
+    # 컨텍스트 동기화는 202 폴링이 아니라 가벼운 동기 호출(200) → 짧게.
+    connect-timeout-ms: ${AGENT_CONNECT_TIMEOUT_MS:2000}
+    read-timeout-ms: ${AGENT_READ_TIMEOUT_MS:3000}
   worker:
     # service-worker 발행 폴링 루프 (docs/service-integration-guide.md §4)
     publish:
