@@ -51,4 +51,17 @@ public class BookmarkController {
                                                    @PathVariable Long id) {
         return ApiResponse.ok(bookmarkService.get(principal.id(), id));
     }
+
+    /**
+     * 비동기 심화 재처리 요청 — 202 Accepted.
+     * 즉시 응답만 하고, 실제 카드는 service-worker 폴링 루프가 잠시 뒤 발행한다.
+     * 프론트는 이후 GET /api/feed(또는 /bookmarks/{id})를 폴링해 "도착"을 감지한다.
+     */
+    @PostMapping("/{id}/reprocess")
+    @ResponseStatus(HttpStatus.ACCEPTED)
+    public ApiResponse<Void> reprocess(@AuthenticationPrincipal AuthPrincipal principal,
+                                       @PathVariable Long id) {
+        bookmarkService.requestReprocess(principal.id(), id);
+        return ApiResponse.ok();
+    }
 }

@@ -47,6 +47,13 @@ public class Card {
     @Column(nullable = false, length = 20)
     private String visibility;
 
+    // 비동기 발행(agent Pull) 멱등 키. 동기 "즉시 카드"는 둘 다 null.
+    @Column(name = "external_content_id", length = 200)
+    private String externalContentId;
+
+    @Column(name = "external_version")
+    private Integer externalVersion;
+
     @OneToMany(mappedBy = "card", cascade = CascadeType.ALL, orphanRemoval = true)
     private List<CardSource> sources = new ArrayList<>();
 
@@ -71,6 +78,15 @@ public class Card {
         this.summary = summary;
         this.whyForYou = whyForYou;
         this.visibility = "PRIVATE";   // 공개 피드는 P1 — 기본 비공개
+    }
+
+    /** agent 발행(Pull) 카드 — content_id/version 멱등 키를 함께 보관한다. */
+    public static Card fromExternal(Long userId, String contentId, Integer version,
+                                    String title, String summary, String whyForYou) {
+        Card card = new Card(userId, title, summary, whyForYou);
+        card.externalContentId = contentId;
+        card.externalVersion = version;
+        return card;
     }
 
     public void addSource(String title, String url) {

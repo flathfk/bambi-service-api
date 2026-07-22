@@ -35,3 +35,12 @@ app:
     # 서버 시작 시 두 값이 모두 있으면 ADMIN 계정을 seed 한다 (없으면 skip)
     email: ${ADMIN_EMAIL:}
     password: ${ADMIN_PASSWORD:}
+  worker:
+    # service-worker 발행 폴링 루프 (docs/service-integration-guide.md §4)
+    publish:
+      enabled: ${WORKER_PUBLISH_ENABLED:true}        # false 면 워커 빈 비활성
+      worker-id: ${WORKER_ID:service-worker-01}
+      poll-interval-ms: ${WORKER_POLL_INTERVAL_MS:15000}   # 10~30초 권장
+      initial-delay-ms: ${WORKER_INITIAL_DELAY_MS:10000}
+      batch-limit: ${WORKER_BATCH_LIMIT:50}
+      lease-seconds: ${WORKER_LEASE_SECONDS:120}

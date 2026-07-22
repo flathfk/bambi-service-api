@@ -13,4 +13,7 @@ public interface CardRepository extends JpaRepository<Card, Long> {
      */
     @EntityGraph(attributePaths = "sources")
     List<Card> findByUserIdAndDeletedAtIsNullOrderByCreatedAtDesc(Long userId);
+
+    /** 발행 워커의 멱등 Upsert 판단용 — 같은 사용자+external_content_id 카드 존재 여부 */
+    boolean existsByUserIdAndExternalContentId(Long userId, String externalContentId);
 }
