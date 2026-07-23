@@ -68,6 +68,11 @@ public class AiRequestLog {
         return endpoint;
     }
 
+    /** 요청 본문(JSON 문자열). 관리자 상세 뷰에서만 쓴다. 적재 전이면 null. */
+    public String getRequestBody() {
+        return requestBody;
+    }
+
     public OffsetDateTime getCreatedAt() {
         return createdAt;
     }
