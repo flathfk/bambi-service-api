@@ -1,8 +1,10 @@
 package com.bambi.service.admin;
 
+import com.bambi.service.admin.dto.AdminAiLogDetailResponse;
 import com.bambi.service.admin.dto.AdminAiLogResponse;
 import com.bambi.service.common.response.ApiResponse;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -26,5 +28,11 @@ public class AdminAiLogController {
     @GetMapping
     public ApiResponse<List<AdminAiLogResponse>> list() {
         return ApiResponse.ok(adminAiLogService.listLogs());
+    }
+
+    /** 로그 한 건 상세 — 요청·응답 본문 포함. 없으면 NOT_FOUND. */
+    @GetMapping("/{id}")
+    public ApiResponse<AdminAiLogDetailResponse> detail(@PathVariable long id) {
+        return ApiResponse.ok(adminAiLogService.getLogDetail(id));
     }
 }

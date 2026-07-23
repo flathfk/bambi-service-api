@@ -1,6 +1,9 @@
 package com.bambi.service.admin;
 
+import com.bambi.service.admin.dto.AdminAiLogDetailResponse;
 import com.bambi.service.admin.dto.AdminAiLogResponse;
+import com.bambi.service.common.error.ApiException;
+import com.bambi.service.common.error.ErrorCode;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -35,5 +38,20 @@ public class AdminAiLogService {
                     return AdminAiLogResponse.of(request, response);
                 })
                 .toList();
+    }
+
+    /**
+     * AI 로그 한 건의 상세(요청·응답 본문 포함)를 조회한다.
+     * 요청 로그가 없으면 NOT_FOUND. 응답이 아직 없으면 처리 중이라 본문은 요청만 채워진다.
+     */
+    @Transactional(readOnly = true)
+    public AdminAiLogDetailResponse getLogDetail(long requestId) {
+        AiRequestLog request = requestLogRepository.findById(requestId)
+                .orElseThrow(() -> new ApiException(ErrorCode.NOT_FOUND,
+                        "AI 로그를 찾을 수 없습니다 (id=" + requestId + ")"));
+        AiResponseLog response = responseLogRepository
+                .findFirstByRequestIdOrderByCreatedAtDesc(requestId)
+                .orElse(null);
+        return AdminAiLogDetailResponse.of(request, response);
     }
 }

@@ -64,4 +64,13 @@ public class AiResponseLog {
     public Integer getLatencyMs() {
         return latencyMs;
     }
+
+    /** 응답 본문(JSON 문자열 또는 연결 실패 시 에러 메시지). 관리자 상세 뷰에서만 쓴다. null 가능. */
+    public String getResponseBody() {
+        return responseBody;
+    }
+
+    public OffsetDateTime getCreatedAt() {
+        return createdAt;
+    }
 }
