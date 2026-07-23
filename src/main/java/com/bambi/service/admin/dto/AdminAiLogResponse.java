@@ -31,12 +31,23 @@ public record AdminAiLogResponse(
                 response != null ? response.getLatencyMs() : null);
     }
 
-    /** 응답이 없으면 처리 중, 있으면 status_code 로 성공/실패를 가른다. */
+    /**
+     * 응답 기록 유무·status_code 로 상태를 가른다.
+     * <ul>
+     *   <li>응답 기록 자체가 없음 → 아직 처리 중(PROCESSING)
+     *   <li>응답 기록은 있는데 status_code 가 null → 호출은 끝났으나 HTTP 응답을 못 받음
+     *       (agent 연결 실패/타임아웃) = FAILED. ※ 여기서 PROCESSING 으로 보던 게 "영구 처리중" 버그였다.
+     *   <li>status_code 있음 → 2xx 면 SUCCESS, 그 외 FAILED
+     * </ul>
+     */
     private static String deriveStatus(AiResponseLog response) {
-        if (response == null || response.getStatusCode() == null) {
+        if (response == null) {
             return "PROCESSING";
         }
-        int code = response.getStatusCode();
+        Integer code = response.getStatusCode();
+        if (code == null) {
+            return "FAILED";
+        }
         return (code >= 200 && code < 300) ? "SUCCESS" : "FAILED";
     }
 }
