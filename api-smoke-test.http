@@ -75,6 +75,8 @@ Authorization: Bearer {{token}}
         client.assert(response.body.data.card.title != null, "card가 없음");
         client.assert(response.body.data.card.sources.length > 0, "card에 출처가 없음");
     });
+    // 카드 단건 조회(16번)에서 쓸 publicId 저장
+    client.global.set("cardPublicId", response.body.data.card.publicId);
 %}
 
 ### 9) 북마크 목록  — 방금 저장한 북마크(요약 포함)가 보이면 OK
@@ -111,6 +113,28 @@ Authorization: Bearer {{token}}
 {
   "title": "제목만 있는 요청"
 }
+
+### ──────────── 카드 단건 조회 (영현) — 여진 카드 상세 진입용 ────────────
+
+### 16) 카드 단건 조회  — 8번에서 만든 카드를 publicId 로 조회 → 200 + 카드 본문
+GET {{host}}/api/cards/{{cardPublicId}}
+Authorization: Bearer {{token}}
+
+> {%
+    client.test("카드 단건 200 + publicId 일치", function() {
+        client.assert(response.status === 200, "status가 200이 아님: " + response.status);
+        client.assert(response.body.data.publicId === client.global.get("cardPublicId"), "publicId 불일치");
+        client.assert(response.body.data.sources.length > 0, "출처 없음");
+    });
+%}
+
+### 17) (음성 테스트) 없는 카드  — 404 NOT_FOUND 가 나와야 정상
+GET {{host}}/api/cards/00000000-0000-0000-0000-000000000000
+Authorization: Bearer {{token}}
+
+### 18) (음성 테스트) 형식 잘못된 publicId  — 500 아니라 404 여야 정상
+GET {{host}}/api/cards/not-a-uuid
+Authorization: Bearer {{token}}
 
 ### ──────────── service-worker 비동기 발행 폴링 (영현) ────────────
 ### 흐름: 8)에서 저장한 북마크를 비동기 재처리 → 워커가 폴링으로 심화 카드 발행
