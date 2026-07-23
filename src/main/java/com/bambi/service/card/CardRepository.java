@@ -4,6 +4,8 @@ import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
 
 import java.util.List;
+import java.util.Optional;
+import java.util.UUID;
 
 public interface CardRepository extends JpaRepository<Card, Long> {
 
@@ -13,6 +15,14 @@ public interface CardRepository extends JpaRepository<Card, Long> {
      */
     @EntityGraph(attributePaths = "sources")
     List<Card> findByUserIdAndDeletedAtIsNullOrderByCreatedAtDesc(Long userId);
+
+    /**
+     * 카드 단건 조회 (대외 식별자 publicId + 소유자 범위, soft delete 제외).
+     * sources 를 함께 로딩(@EntityGraph). 없으면 empty → 컨트롤러가 404.
+     * 남의 카드도 존재 노출 없이 empty(404) 로 처리된다.
+     */
+    @EntityGraph(attributePaths = "sources")
+    Optional<Card> findByPublicIdAndUserIdAndDeletedAtIsNull(UUID publicId, Long userId);
 
     /** 발행 워커의 멱등 Upsert 판단용 — 같은 사용자+external_content_id 카드 존재 여부 */
     boolean existsByUserIdAndExternalContentId(Long userId, String externalContentId);
