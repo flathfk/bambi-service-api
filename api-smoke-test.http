@@ -128,3 +128,48 @@ Authorization: Bearer {{token}}
 ### 15) 같은 북마크 재처리 반복  — 202 지만, 피드 카드 수는 안 늘어야(멱등 발행)
 POST {{host}}/api/bookmarks/1/reprocess
 Authorization: Bearer {{token}}
+
+### ──────────────── 관심사 CRUD (영현) ────────────────
+
+### 19) 관심사 생성  — 201 + source=USER
+POST {{host}}/api/interests
+Content-Type: application/json
+Authorization: Bearer {{token}}
+
+{
+  "name": "AI Agent"
+}
+
+> {%
+    client.test("관심사 201 + USER", function() {
+        client.assert(response.status === 201, "status가 201이 아님: " + response.status);
+        client.assert(response.body.data.source === "USER", "source가 USER가 아님");
+    });
+    client.global.set("interestId", response.body.data.id);
+%}
+
+### 20) 관심사 목록  — 방금 만든 관심사가 보이면 OK
+GET {{host}}/api/interests
+Authorization: Bearer {{token}}
+
+### 21) 관심사 이름 수정(rename)  — 200 + 바뀐 이름
+PUT {{host}}/api/interests/{{interestId}}
+Content-Type: application/json
+Authorization: Bearer {{token}}
+
+{
+  "name": "AI Agents"
+}
+
+### 22) (음성 테스트) 중복 이름 생성  — 409 DUPLICATE_RESOURCE
+POST {{host}}/api/interests
+Content-Type: application/json
+Authorization: Bearer {{token}}
+
+{
+  "name": "AI Agents"
+}
+
+### 23) 관심사 삭제(soft)  — 200. 목록에서 사라짐
+DELETE {{host}}/api/interests/{{interestId}}
+Authorization: Bearer {{token}}
