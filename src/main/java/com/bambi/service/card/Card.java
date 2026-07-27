@@ -93,6 +93,21 @@ public class Card {
         sources.add(new CardSource(this, title, url));
     }
 
+    /**
+     * 카드 공개설정 변경 (SNS 카드 공개/비공개 스위치).
+     * 허용값은 V1 CHECK 제약(PRIVATE/PUBLIC)과 일치. 잘못된 값은 저장 전에 막는다.
+     */
+    public void changeVisibility(String visibility) {
+        if (!"PUBLIC".equals(visibility) && !"PRIVATE".equals(visibility)) {
+            throw new IllegalArgumentException("visibility must be PUBLIC or PRIVATE: " + visibility);
+        }
+        this.visibility = visibility;
+    }
+
+    public String getVisibility() {
+        return visibility;
+    }
+
     public Long getId() {
         return id;
     }
