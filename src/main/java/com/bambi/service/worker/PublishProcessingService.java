@@ -30,12 +30,13 @@ public class PublishProcessingService {
     @Transactional
     public boolean upsert(PublishItem item) {
         // 멱등: 같은 사용자+content_id 카드가 이미 있으면 재-claim/재-ack 이므로 skip.
-        if (cardRepository.existsByUserIdAndExternalContentId(item.userId(), item.contentId())) {
+        Long userId = item.userIdAsLong();
+        if (cardRepository.existsByUserIdAndExternalContentId(userId, item.contentId())) {
             log.info("[PublishWorker] 이미 발행됨 skip contentId={}", item.contentId());
             return true;
         }
         Card card = Card.fromExternal(
-                item.userId(), item.contentId(), item.version(),
+                userId, item.contentId(), item.version(),
                 item.title(), item.summary(), null);
         if (item.citations() != null) {
             item.citations().forEach(c -> card.addSource(c.title(), c.url()));
@@ -47,7 +48,7 @@ public class PublishProcessingService {
             log.info("[PublishWorker] 유니크 충돌 → 멱등 처리 contentId={}", item.contentId());
             return true;
         }
-        log.info("[PublishWorker] 카드 발행 contentId={}, userId={}", item.contentId(), item.userId());
+        log.info("[PublishWorker] 카드 발행 contentId={}, userId={}", item.contentId(), userId);
         return true;
     }
 }

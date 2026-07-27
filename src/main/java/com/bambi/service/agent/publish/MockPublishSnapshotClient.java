@@ -38,7 +38,7 @@ public class MockPublishSnapshotClient implements PublishSnapshotClient, MockPub
     public void enqueue(Long userId, String contentId, String title,
                         String sourceTitle, String sourceUrl) {
         PublishItem item = new PublishItem(
-                contentId, userId, 1,
+                contentId, String.valueOf(userId), 1,
                 "hash-" + contentId,
                 title,
                 "저장한 콘텐츠를 바탕으로 agent 가 생성한 심화 브리핑입니다. (Mock 비동기 발행)",
