@@ -66,11 +66,13 @@ public class PublishPollingWorker {
         for (PublishItem item : claimed.items()) {
             try {
                 processingService.upsert(item);   // 항목별 독립 트랜잭션
-                acks.add(AckRequest.AckItem.published(item.contentId(), item.snapshotHash()));
+                acks.add(AckRequest.AckItem.published(
+                        item.contentId(), item.version(), item.snapshotHash()));
             } catch (Exception e) {
                 // 실패는 retryable 로 ACK → Backoff 후 ready 복귀. (영구 실패 분류는 P1)
                 log.warn("[PublishWorker] 항목 처리 실패 contentId={} — retryable ACK", item.contentId(), e);
-                acks.add(AckRequest.AckItem.failed(item.contentId(), item.snapshotHash(), true));
+                acks.add(AckRequest.AckItem.failed(
+                        item.contentId(), item.version(), item.snapshotHash(), true, failureReason(e)));
             }
         }
 
@@ -80,5 +82,13 @@ public class PublishPollingWorker {
             // ACK 실패해도 lease 만료 후 재-claim 되므로 유실 없음.
             log.warn("[PublishWorker] ack 실패 batchId={} — lease 만료 후 재처리", claimed.batchId(), e);
         }
+    }
+
+    /**
+     * agent 로 보낼 실패 사유. 예외 메시지에는 SQL·접속정보가 섞일 수 있어 예외 타입만 넘긴다
+     * (전체 스택은 위 log.warn 으로 우리 로그에 남는다).
+     */
+    private static String failureReason(Exception e) {
+        return e.getClass().getSimpleName();
     }
 }
