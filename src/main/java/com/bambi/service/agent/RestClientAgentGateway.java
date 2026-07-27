@@ -1,5 +1,6 @@
 package com.bambi.service.agent;
 
+import com.bambi.service.agent.dto.AgentClippingRequest;
 import com.bambi.service.agent.dto.AgentContextRequest;
 import com.bambi.service.common.error.ApiException;
 import com.bambi.service.common.error.ErrorCode;
@@ -75,6 +76,36 @@ public class RestClientAgentGateway implements AgentGateway {
 
         } catch (RestClientException e) {
             // 연결 실패/타임아웃 등 (응답 자체가 없음)
+            callLogger.logResponse(reqLogId, null, elapsedMs(startNanos), e.getMessage());
+            throw new ApiException(ErrorCode.AGENT_UNAVAILABLE, "agent 연결 실패: " + e.getMessage());
+        }
+    }
+
+    @Override
+    public void relayClipping(long userId, AgentClippingRequest request) {
+        String path = internalPrefix + "/users/" + userId + "/wiki-sources/clippings";
+        String requestBody = toJson(request);
+        Long reqLogId = callLogger.logRequest(userId, path, requestBody);
+        long startNanos = System.nanoTime();
+
+        try {
+            ResponseEntity<String> resp = restClient.post()
+                    .uri(path)
+                    .header("X-Request-ID", UUID.randomUUID().toString())
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .body(request)
+                    .retrieve()
+                    .toEntity(String.class);
+            // 202 Accepted 가 정상 — Job 접수만 확인한다(결과는 service-worker Pull).
+            callLogger.logResponse(reqLogId, resp.getStatusCode().value(), elapsedMs(startNanos), resp.getBody());
+
+        } catch (RestClientResponseException e) {
+            int status = e.getStatusCode().value();
+            callLogger.logResponse(reqLogId, status, elapsedMs(startNanos), e.getResponseBodyAsString());
+            throw new ApiException(ErrorCode.AGENT_UNAVAILABLE,
+                    "agent 클리핑 중계 실패 (status=" + status + ")");
+
+        } catch (RestClientException e) {
             callLogger.logResponse(reqLogId, null, elapsedMs(startNanos), e.getMessage());
             throw new ApiException(ErrorCode.AGENT_UNAVAILABLE, "agent 연결 실패: " + e.getMessage());
         }
