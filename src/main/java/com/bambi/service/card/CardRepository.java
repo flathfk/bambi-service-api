@@ -43,16 +43,16 @@ public interface CardRepository extends JpaRepository<Card, Long> {
     long countByUserIdAndVisibilityAndDeletedAtIsNull(Long userId, String visibility);
 
     /**
-     * 공개 피드(전체) — PUBLIC 카드를 최신순으로. sources 는 @EntityGraph 로 1-shot 로딩(N+1 차단).
-     * 좋아요 수/내 좋아요 여부·작성자 정보는 서비스에서 배치로 합친다(카드별 재조회 없음).
+     * 공개 피드(전체) — PUBLIC 카드를 최신순으로.
+     * 컬렉션(sources) fetch join + Pageable 은 LIMIT 을 SQL 로 못 내려 전량 로딩(HHH000104)하므로
+     * 여기서는 @EntityGraph 를 쓰지 않는다. 페이지네이션(LIMIT)이 SQL 로 내려가 부분 인덱스
+     * idx_cards_public_feed 가 살아나고, sources 는 Card.sources 의 @BatchSize 로 IN 배치 로딩된다.
      */
-    @EntityGraph(attributePaths = "sources")
     @Query("select c from Card c where c.visibility = 'PUBLIC' and c.deletedAt is null "
             + "order by c.createdAt desc")
     List<Card> findPublicFeed(Pageable pageable);
 
-    /** 공개 피드(팔로잉 스코프) — 내가 팔로우하는 작성자의 PUBLIC 카드만. */
-    @EntityGraph(attributePaths = "sources")
+    /** 공개 피드(팔로잉 스코프) — 내가 팔로우하는 작성자의 PUBLIC 카드만. (@BatchSize 로 sources 배치 로딩) */
     @Query("select c from Card c where c.visibility = 'PUBLIC' and c.deletedAt is null "
             + "and c.userId in :authorIds order by c.createdAt desc")
     List<Card> findPublicFeedByAuthors(@Param("authorIds") Collection<Long> authorIds, Pageable pageable);

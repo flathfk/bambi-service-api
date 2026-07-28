@@ -16,6 +16,8 @@ public record PublicCardResponse(
         UUID publicId,
         String title,
         String summary,
+        // TODO(07-27 결정): why_for_you 는 폐기 방향 → 관심사 태그로 대체 예정.
+        //   agent 카드/리포트 태그 스키마 확정되면 이 필드를 태그로 교체한다(소라·영현 협의).
         String whyForYou,
         AuthorResponse author,
         long likeCount,

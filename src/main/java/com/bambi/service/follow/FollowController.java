@@ -38,9 +38,11 @@ public class FollowController {
         return ApiResponse.ok(followService.unfollow(principal.id(), publicId));
     }
 
+    /** 공개 프로필은 비로그인 열람 허용 → 익명이면 principal null(following=false). */
     @GetMapping("/profile")
     public ApiResponse<ProfileResponse> profile(@AuthenticationPrincipal AuthPrincipal principal,
                                                 @PathVariable String publicId) {
-        return ApiResponse.ok(followService.profile(principal.id(), publicId));
+        Long viewerId = principal != null ? principal.id() : null;
+        return ApiResponse.ok(followService.profile(viewerId, publicId));
     }
 }

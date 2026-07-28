@@ -8,6 +8,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.http.HttpMethod;
 import org.springframework.http.MediaType;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
@@ -61,6 +62,10 @@ public class SecurityConfig {
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers("/api/health", "/api/version").permitAll()
                         .requestMatchers("/api/auth/signup", "/api/auth/login").permitAll()
+                        // 공개 피드·공개 프로필은 비로그인 열람 허용 (팀 정책: 홈=공개 SNS).
+                        // GET 만 공개 — 팔로우/좋아요/공개설정 등 쓰기는 아래 authenticated 로 막힌다.
+                        // 팔로잉 스코프(?following=true)는 로그인 전제라 서비스에서 401 을 던진다.
+                        .requestMatchers(HttpMethod.GET, "/api/feed/public", "/api/users/*/profile").permitAll()
                         .requestMatchers("/api/admin/**").hasRole("ADMIN")
                         .anyRequest().authenticated())
                 .exceptionHandling(eh -> eh

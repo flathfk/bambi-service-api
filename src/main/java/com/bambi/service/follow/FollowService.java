@@ -51,12 +51,16 @@ public class FollowService {
         return new FollowResponse(false, followRepository.countByFolloweeId(followeeId));
     }
 
-    /** 공개 프로필 + 팔로우 통계. following = 조회자(viewerId)가 이 사용자를 팔로우 중인지. */
+    /**
+     * 공개 프로필 + 팔로우 통계. following = 조회자(viewerId)가 이 사용자를 팔로우 중인지.
+     * viewerId=null(비로그인 게스트)이면 following 은 항상 false(조회 없이).
+     */
     @Transactional(readOnly = true)
     public ProfileResponse profile(Long viewerId, String targetPublicId) {
         User target = resolveUser(targetPublicId);
         Long targetId = target.getId();
-        boolean following = !targetId.equals(viewerId)
+        boolean following = viewerId != null
+                && !targetId.equals(viewerId)
                 && followRepository.existsByFollowerIdAndFolloweeId(viewerId, targetId);
         return new ProfileResponse(
                 target.getPublicId(),

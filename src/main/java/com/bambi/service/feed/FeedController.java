@@ -38,6 +38,9 @@ public class FeedController {
             @AuthenticationPrincipal AuthPrincipal principal,
             @RequestParam(name = "following", defaultValue = "false") boolean following,
             @RequestParam(name = "limit", defaultValue = "20") int limit) {
-        return ApiResponse.ok(feedService.publicFeed(principal.id(), following, limit));
+        // 비로그인 열람 허용 → 익명이면 principal 이 null. viewerId=null 로 넘긴다.
+        // (익명이면 liked=false, 팔로잉 스코프는 서비스가 401 로 막는다)
+        Long viewerId = principal != null ? principal.id() : null;
+        return ApiResponse.ok(feedService.publicFeed(viewerId, following, limit));
     }
 }

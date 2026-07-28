@@ -30,31 +30,33 @@ public class LikeService {
 
     @Transactional
     public LikeResponse like(Long userId, String cardPublicId) {
-        Long cardId = resolvePublicCardId(cardPublicId);
-        likeRepository.insertIgnore(userId, cardId);   // 멱등
-        return new LikeResponse(true, likeRepository.countByCardId(cardId));
+        Card card = resolveAliveCard(cardPublicId);
+        // 좋아요는 공개(PUBLIC) 카드에만. 비공개/없음은 존재 노출 없이 404.
+        if (!PUBLIC.equals(card.getVisibility())) {
+            throw new ApiException(ErrorCode.NOT_FOUND, "카드를 찾을 수 없습니다.");
+        }
+        likeRepository.insertIgnore(userId, card.getId());   // 멱등
+        return new LikeResponse(true, likeRepository.countByCardId(card.getId()));
     }
 
     @Transactional
     public LikeResponse unlike(Long userId, String cardPublicId) {
-        Long cardId = resolvePublicCardId(cardPublicId);
-        likeRepository.deleteRelation(userId, cardId);  // 없어도 멱등
-        return new LikeResponse(false, likeRepository.countByCardId(cardId));
+        // 취소는 PUBLIC 검사를 하지 않는다: 좋아요한 뒤 소유자가 비공개로 바꿔도 취소할 수 있어야 한다.
+        // deleteRelation 은 없어도 0건이라 멱등하게 안전하다.
+        Card card = resolveAliveCard(cardPublicId);
+        likeRepository.deleteRelation(userId, card.getId());
+        return new LikeResponse(false, likeRepository.countByCardId(card.getId()));
     }
 
-    /** 공개 카드만 좋아요 대상. 형식 오류/없음/비공개는 모두 404 로 통일한다. */
-    private Long resolvePublicCardId(String cardPublicId) {
+    /** publicId 로 살아있는 카드 조회. 형식 오류/없음은 존재 노출 없이 404. (PUBLIC 여부는 호출부 판단) */
+    private Card resolveAliveCard(String cardPublicId) {
         UUID uuid;
         try {
             uuid = UUID.fromString(cardPublicId);
         } catch (IllegalArgumentException e) {
             throw new ApiException(ErrorCode.NOT_FOUND, "카드를 찾을 수 없습니다.");
         }
-        Card card = cardRepository.findByPublicIdAndDeletedAtIsNull(uuid)
+        return cardRepository.findByPublicIdAndDeletedAtIsNull(uuid)
                 .orElseThrow(() -> new ApiException(ErrorCode.NOT_FOUND, "카드를 찾을 수 없습니다."));
-        if (!PUBLIC.equals(card.getVisibility())) {
-            throw new ApiException(ErrorCode.NOT_FOUND, "카드를 찾을 수 없습니다.");
-        }
-        return card.getId();
     }
 }
