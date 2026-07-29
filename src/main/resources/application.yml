@@ -52,3 +52,11 @@ app:
       initial-delay-ms: ${WORKER_INITIAL_DELAY_MS:10000}
       batch-limit: ${WORKER_BATCH_LIMIT:50}
       lease-seconds: ${WORKER_LEASE_SECONDS:120}
+  scheduler:
+    # 콘텐츠 생성 트리거 (송우 가이드 §3.4 — 지정 시각에 사용자별 생성 요청)
+    generation:
+      # 기본 비활성(실제 생성 연동 P1 전까지 Mock 로깅). 켜려면 true.
+      enabled: ${SCHEDULER_GENERATION_ENABLED:false}
+      cron: ${SCHEDULER_GENERATION_CRON:0 0 7 * * *}   # 매일 07:00 KST
+      content-type: ${SCHEDULER_GENERATION_CONTENT_TYPE:interest_news_card}
+      topic: ${SCHEDULER_GENERATION_TOPIC:오늘의 관심사 뉴스}
