@@ -31,6 +31,13 @@ public interface CardRepository extends JpaRepository<Card, Long> {
     /** 발행 워커의 멱등 Upsert 판단용 — 같은 사용자+external_content_id 카드 존재 여부 */
     boolean existsByUserIdAndExternalContentId(Long userId, String externalContentId);
 
+    /**
+     * 발행 Upsert 대상 카드 조회 (같은 사용자+external_content_id).
+     * 갱신 시 sources 를 교체하므로 함께 로딩(@EntityGraph)해 지연로딩 없이 다룬다.
+     */
+    @EntityGraph(attributePaths = "sources")
+    Optional<Card> findByUserIdAndExternalContentId(Long userId, String externalContentId);
+
     // ── SNS(Week2) ─────────────────────────────────────────────
 
     /**
