@@ -1,6 +1,8 @@
 package com.bambi.service.agent;
 
+import com.bambi.service.agent.dto.AgentClippingRequest;
 import com.bambi.service.agent.dto.AgentContextRequest;
+import com.bambi.service.agent.dto.AgentUrlSourceRequest;
 import com.bambi.service.common.error.ApiException;
 import com.bambi.service.common.error.ErrorCode;
 import com.fasterxml.jackson.core.JsonProcessingException;
@@ -75,6 +77,48 @@ public class RestClientAgentGateway implements AgentGateway {
 
         } catch (RestClientException e) {
             // 연결 실패/타임아웃 등 (응답 자체가 없음)
+            callLogger.logResponse(reqLogId, null, elapsedMs(startNanos), e.getMessage());
+            throw new ApiException(ErrorCode.AGENT_UNAVAILABLE, "agent 연결 실패: " + e.getMessage());
+        }
+    }
+
+    @Override
+    public void relayClipping(long userId, AgentClippingRequest request) {
+        postWikiSource(userId, "/wiki-sources/clippings", request, "agent 클리핑 중계 실패");
+    }
+
+    @Override
+    public void relayUrlSource(long userId, AgentUrlSourceRequest request) {
+        postWikiSource(userId, "/wiki-sources/urls", request, "agent URL 중계 실패");
+    }
+
+    /**
+     * 위키 원천 처리 POST 공통 로직(clippings·urls). 202 접수만 확인하고, 응답을 AI 로그로 남기며
+     * agent 오류를 AGENT_UNAVAILABLE 로 변환한다. clipping/url 은 경로와 실패 문구만 다르다.
+     */
+    private void postWikiSource(long userId, String pathSuffix, Object request, String failMessage) {
+        String path = internalPrefix + "/users/" + userId + pathSuffix;
+        String requestBody = toJson(request);
+        Long reqLogId = callLogger.logRequest(userId, path, requestBody);
+        long startNanos = System.nanoTime();
+
+        try {
+            ResponseEntity<String> resp = restClient.post()
+                    .uri(path)
+                    .header("X-Request-ID", UUID.randomUUID().toString())
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .body(request)
+                    .retrieve()
+                    .toEntity(String.class);
+            // 202 Accepted 가 정상 — Job 접수만 확인한다(결과는 service-worker Pull).
+            callLogger.logResponse(reqLogId, resp.getStatusCode().value(), elapsedMs(startNanos), resp.getBody());
+
+        } catch (RestClientResponseException e) {
+            int status = e.getStatusCode().value();
+            callLogger.logResponse(reqLogId, status, elapsedMs(startNanos), e.getResponseBodyAsString());
+            throw new ApiException(ErrorCode.AGENT_UNAVAILABLE, failMessage + " (status=" + status + ")");
+
+        } catch (RestClientException e) {
             callLogger.logResponse(reqLogId, null, elapsedMs(startNanos), e.getMessage());
             throw new ApiException(ErrorCode.AGENT_UNAVAILABLE, "agent 연결 실패: " + e.getMessage());
         }

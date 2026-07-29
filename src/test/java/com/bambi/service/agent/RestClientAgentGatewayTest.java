@@ -1,6 +1,8 @@
 package com.bambi.service.agent;
 
+import com.bambi.service.agent.dto.AgentClippingRequest;
 import com.bambi.service.agent.dto.AgentContextRequest;
+import com.bambi.service.agent.dto.AgentUrlSourceRequest;
 import com.bambi.service.common.error.ApiException;
 import com.bambi.service.common.error.ErrorCode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -33,6 +35,8 @@ import static org.springframework.test.web.client.response.MockRestResponseCreat
 class RestClientAgentGatewayTest {
 
     private static final String CONTEXT_URL = "http://agent.local/internal/v1/users/7/context";
+    private static final String CLIPPING_URL = "http://agent.local/internal/v1/users/7/wiki-sources/clippings";
+    private static final String URL_SOURCE_URL = "http://agent.local/internal/v1/users/7/wiki-sources/urls";
 
     private MockRestServiceServer server;
     private AgentCallLogger callLogger;
@@ -90,5 +94,52 @@ class RestClientAgentGatewayTest {
         assertThat(ex).isNotNull();
         assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.AGENT_UNAVAILABLE);
         verify(callLogger).logResponse(eq(1L), eq(503), anyInt(), any());
+    }
+
+    @Test
+    @DisplayName("클리핑 중계는 clippings 경로로 POST하고 202를 성공으로 로그한다")
+    void relayClippingAcceptsAsync() {
+        server.expect(requestTo(CLIPPING_URL))
+                .andExpect(method(HttpMethod.POST))
+                .andRespond(withStatus(HttpStatus.ACCEPTED)
+                        .body("{\"job_id\":\"j-1\",\"status\":\"queued\"}")
+                        .contentType(MediaType.APPLICATION_JSON));
+
+        gateway.relayClipping(7, AgentClippingRequest.of("bookmark-42", "https://ex.com/a", "제목", "본문"));
+
+        server.verify();
+        verify(callLogger).logRequest(eq(7L), eq("/internal/v1/users/7/wiki-sources/clippings"), any());
+        verify(callLogger).logResponse(eq(1L), eq(202), anyInt(), any());
+    }
+
+    @Test
+    @DisplayName("클리핑 중계 5xx는 AGENT_UNAVAILABLE로 변환한다")
+    void relayClippingServerErrorMapsToAgentUnavailable() {
+        server.expect(requestTo(CLIPPING_URL))
+                .andRespond(withStatus(HttpStatus.SERVICE_UNAVAILABLE));
+
+        ApiException ex = catchThrowableOfType(
+                () -> gateway.relayClipping(7, AgentClippingRequest.of("bookmark-42", "https://ex.com/a", "제목", "본문")),
+                ApiException.class);
+
+        assertThat(ex).isNotNull();
+        assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.AGENT_UNAVAILABLE);
+        verify(callLogger).logResponse(eq(1L), eq(503), anyInt(), any());
+    }
+
+    @Test
+    @DisplayName("URL 원천 중계는 urls 경로로 POST하고 202를 성공으로 로그한다")
+    void relayUrlSourceAcceptsAsync() {
+        server.expect(requestTo(URL_SOURCE_URL))
+                .andExpect(method(HttpMethod.POST))
+                .andRespond(withStatus(HttpStatus.ACCEPTED)
+                        .body("{\"job_id\":\"j-2\",\"status\":\"queued\"}")
+                        .contentType(MediaType.APPLICATION_JSON));
+
+        gateway.relayUrlSource(7, AgentUrlSourceRequest.of("bookmark-42", "https://ex.com/a"));
+
+        server.verify();
+        verify(callLogger).logRequest(eq(7L), eq("/internal/v1/users/7/wiki-sources/urls"), any());
+        verify(callLogger).logResponse(eq(1L), eq(202), anyInt(), any());
     }
 }

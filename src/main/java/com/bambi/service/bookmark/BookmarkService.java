@@ -15,6 +15,7 @@ import com.bambi.service.card.CardRepository;
 import com.bambi.service.card.dto.CardResponse;
 import com.bambi.service.common.error.ApiException;
 import com.bambi.service.common.error.ErrorCode;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -34,15 +35,18 @@ public class BookmarkService {
     private final CardRepository cardRepository;
     private final AgentClient agentClient;
     private final MockPublishInbox publishInbox;
+    private final ApplicationEventPublisher eventPublisher;
 
     public BookmarkService(BookmarkRepository bookmarkRepository,
                            CardRepository cardRepository,
                            AgentClient agentClient,
-                           MockPublishInbox publishInbox) {
+                           MockPublishInbox publishInbox,
+                           ApplicationEventPublisher eventPublisher) {
         this.bookmarkRepository = bookmarkRepository;
         this.cardRepository = cardRepository;
         this.agentClient = agentClient;
         this.publishInbox = publishInbox;
+        this.eventPublisher = eventPublisher;
     }
 
     @Transactional
@@ -74,6 +78,10 @@ public class BookmarkService {
         // 3) 사용자 노출 데이터 저장은 Service 책임 — 카드(+출처) 저장 후 북마크 DONE
         Card card = saveFirstCard(userId, bookmark, generated);
         bookmark.completeProcessing(processed.summary());
+
+        // 저장 커밋 후 agent 위키 원천 처리로 중계한다(AFTER_COMMIT 리스너). 중계 실패는 저장을 막지 않는다.
+        eventPublisher.publishEvent(new BookmarkSavedEvent(
+                userId, bookmark.getId(), bookmark.getUrl(), bookmark.getTitle(), bookmark.getContent()));
 
         return new BookmarkCreateResponse(BookmarkResponse.from(bookmark), CardResponse.from(card));
     }
