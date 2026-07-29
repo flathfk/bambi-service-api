@@ -16,10 +16,12 @@ import org.hibernate.annotations.UpdateTimestamp;
 import java.time.OffsetDateTime;
 import java.util.HashSet;
 import java.util.Set;
+import java.util.UUID;
 
 /**
  * 사용자. service.users 에 매핑.
- * public_id(UUID) 는 DB default(gen_random_uuid())가 채우므로 엔티티에서 매핑하지 않는다.
+ * public_id(UUID) 는 DB default(gen_random_uuid())가 채우므로 쓰기는 하지 않고 읽기 전용으로만 매핑한다
+ * (대외 식별자 — SNS 팔로우/공개 프로필에서 순번 id 노출 없이 사용자를 가리킨다).
  */
 @Entity
 @Table(name = "users")
@@ -28,6 +30,10 @@ public class User {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
+
+    // DB default(gen_random_uuid()) 소유 → insert/update 대상에서 제외(읽기 전용).
+    @Column(name = "public_id", insertable = false, updatable = false)
+    private UUID publicId;
 
     @Column(nullable = false, unique = true)
     private String email;
@@ -74,6 +80,10 @@ public class User {
 
     public Long getId() {
         return id;
+    }
+
+    public UUID getPublicId() {
+        return publicId;
     }
 
     public String getEmail() {

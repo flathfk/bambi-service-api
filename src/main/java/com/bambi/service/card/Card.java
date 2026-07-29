@@ -8,6 +8,7 @@ import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.OneToMany;
 import jakarta.persistence.Table;
+import org.hibernate.annotations.BatchSize;
 import org.hibernate.annotations.CreationTimestamp;
 import org.hibernate.annotations.UpdateTimestamp;
 
@@ -54,7 +55,10 @@ public class Card {
     @Column(name = "external_version")
     private Integer externalVersion;
 
+    // @BatchSize: 공개피드처럼 fetch join 없이 여러 카드를 페이징 조회할 때, 각 카드의 sources 를
+    // 카드당 1쿼리(N+1)가 아니라 IN (…) 한 번으로 묶어 로딩한다(최대 100건). 인메모리 페이지네이션 회피.
     @OneToMany(mappedBy = "card", cascade = CascadeType.ALL, orphanRemoval = true)
+    @BatchSize(size = 100)
     private List<CardSource> sources = new ArrayList<>();
 
     @CreationTimestamp
@@ -91,6 +95,21 @@ public class Card {
 
     public void addSource(String title, String url) {
         sources.add(new CardSource(this, title, url));
+    }
+
+    /**
+     * 카드 공개설정 변경 (SNS 카드 공개/비공개 스위치).
+     * 허용값은 V1 CHECK 제약(PRIVATE/PUBLIC)과 일치. 잘못된 값은 저장 전에 막는다.
+     */
+    public void changeVisibility(String visibility) {
+        if (!"PUBLIC".equals(visibility) && !"PRIVATE".equals(visibility)) {
+            throw new IllegalArgumentException("visibility must be PUBLIC or PRIVATE: " + visibility);
+        }
+        this.visibility = visibility;
+    }
+
+    public String getVisibility() {
+        return visibility;
     }
 
     public Long getId() {
