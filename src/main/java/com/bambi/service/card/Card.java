@@ -1,11 +1,14 @@
 package com.bambi.service.card;
 
 import jakarta.persistence.CascadeType;
+import jakarta.persistence.CollectionTable;
 import jakarta.persistence.Column;
+import jakarta.persistence.ElementCollection;
 import jakarta.persistence.Entity;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
+import jakarta.persistence.JoinColumn;
 import jakarta.persistence.OneToMany;
 import jakarta.persistence.Table;
 import org.hibernate.annotations.BatchSize;
@@ -14,7 +17,9 @@ import org.hibernate.annotations.UpdateTimestamp;
 
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 
 /**
@@ -54,6 +59,17 @@ public class Card {
 
     @Column(name = "external_version")
     private Integer externalVersion;
+
+    // 본문(리포트) 참조. 카드는 요약 전용이고 body 는 reports 에 있다(§3.1). 동기 카드는 null 가능.
+    @Column(name = "report_id")
+    private Long reportId;
+
+    // 관심사 태그 (why_for_you 폐기 대체) — agent 가 붙인 topic 문자열 집합.
+    @ElementCollection
+    @CollectionTable(name = "card_interest_tags", joinColumns = @JoinColumn(name = "card_id"))
+    @Column(name = "tag", nullable = false, length = 100)
+    @BatchSize(size = 100)
+    private Set<String> interestTags = new LinkedHashSet<>();
 
     // @BatchSize: 공개피드처럼 fetch join 없이 여러 카드를 페이징 조회할 때, 각 카드의 sources 를
     // 카드당 1쿼리(N+1)가 아니라 IN (…) 한 번으로 묶어 로딩한다(최대 100건). 인메모리 페이지네이션 회피.
@@ -97,6 +113,25 @@ public class Card {
         sources.add(new CardSource(this, title, url));
     }
 
+    /** 카드를 리포트(본문)에 연결한다. */
+    public void linkReport(Long reportId) {
+        this.reportId = reportId;
+    }
+
+    public void addInterestTag(String tag) {
+        if (tag != null && !tag.isBlank()) {
+            interestTags.add(tag.strip());
+        }
+    }
+
+    /** 관심사 태그를 통째로 교체(발행 재수신 시). */
+    public void replaceInterestTags(java.util.Collection<String> tags) {
+        interestTags.clear();
+        if (tags != null) {
+            tags.forEach(this::addInterestTag);
+        }
+    }
+
     /**
      * 카드 공개설정 변경 (SNS 카드 공개/비공개 스위치).
      * 허용값은 V1 CHECK 제약(PRIVATE/PUBLIC)과 일치. 잘못된 값은 저장 전에 막는다.
@@ -138,6 +173,14 @@ public class Card {
 
     public List<CardSource> getSources() {
         return sources;
+    }
+
+    public Long getReportId() {
+        return reportId;
+    }
+
+    public Set<String> getInterestTags() {
+        return interestTags;
     }
 
     public OffsetDateTime getCreatedAt() {
