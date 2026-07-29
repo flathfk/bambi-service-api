@@ -3,6 +3,8 @@ package com.bambi.service.worker;
 import com.bambi.service.agent.publish.dto.PublishItem;
 import com.bambi.service.card.Card;
 import com.bambi.service.card.CardRepository;
+import com.bambi.service.report.Report;
+import com.bambi.service.report.ReportRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -12,13 +14,14 @@ import org.springframework.transaction.annotation.Transactional;
 import java.util.Optional;
 
 /**
- * 발행 항목 1건을 service-db 카드로 멱등 Upsert (§4: content_id + version 키).
+ * 발행 항목 1건을 service-db 로 멱등 Upsert (§4: content_id + version 키).
+ * 본문은 service.reports 에, 요약은 service.cards 에 저장하고 카드가 리포트를 참조한다(§3.1).
  * 항목별 독립 트랜잭션 — 배치 전체를 한 트랜잭션으로 묶지 않는다(부분 성공 허용).
  *
- * <p>진짜 upsert: 같은 (userId, content_id) 카드가
- *  - 없으면 → 신규 저장
- *  - 있고 수신 version 이 더 크면 → 내용 갱신 (agent 가 스냅샷을 갱신 발행한 경우)
- *  - 있고 version 이 같거나 작으면 → skip (재-claim/중복/구버전 도착)
+ * <p>진짜 upsert: 같은 (userId, content_id) 가
+ *  - 없으면 → 리포트+카드 신규 저장
+ *  - 있고 수신 version 이 더 크면 → 본문·요약 갱신 (agent 스냅샷 갱신 발행)
+ *  - 같거나 작으면 → skip (재-claim/중복/구버전 도착)
  */
 @Service
 public class PublishProcessingService {
@@ -26,9 +29,11 @@ public class PublishProcessingService {
     private static final Logger log = LoggerFactory.getLogger(PublishProcessingService.class);
 
     private final CardRepository cardRepository;
+    private final ReportRepository reportRepository;
 
-    public PublishProcessingService(CardRepository cardRepository) {
+    public PublishProcessingService(CardRepository cardRepository, ReportRepository reportRepository) {
         this.cardRepository = cardRepository;
+        this.reportRepository = reportRepository;
     }
 
     /**
@@ -37,27 +42,35 @@ public class PublishProcessingService {
     @Transactional
     public boolean upsert(PublishItem item) {
         Long userId = item.userIdAsLong();
-        Optional<Card> existing = cardRepository.findByUserIdAndExternalContentId(userId, item.contentId());
+        Optional<Card> existingCard = cardRepository.findByUserIdAndExternalContentId(userId, item.contentId());
 
-        if (existing.isPresent()) {
-            Card card = existing.get();
-            Integer storedVersion = card.getExternalVersion();
-            if (!isNewer(item.version(), storedVersion)) {
-                // 재-claim/중복/구버전 → 최신본 보존, 덮어쓰지 않음(멱등).
-                log.info("[PublishWorker] 이미 최신 skip contentId={} (수신 v{}, 저장 v{})",
-                        item.contentId(), item.version(), storedVersion);
-                return true;
-            }
+        // 버전 게이트: 카드의 저장 version 을 기준으로 최신 여부 판단(카드·리포트는 같은 content_id·version).
+        if (existingCard.isPresent() && !isNewer(item.version(), existingCard.get().getExternalVersion())) {
+            log.info("[PublishWorker] 이미 최신 skip contentId={} (수신 v{}, 저장 v{})",
+                    item.contentId(), item.version(), existingCard.get().getExternalVersion());
+            return true;
+        }
+
+        // 이 version 이 이긴다 → 본문(리포트) upsert 후 카드가 참조한다.
+        Report report = upsertReport(userId, item);
+
+        if (existingCard.isPresent()) {
+            Card card = existingCard.get();
             card.updateExternal(item.version(), item.title(), item.summary());
-            addSources(card, item);   // sources 통째 교체
-            log.info("[PublishWorker] 카드 갱신 contentId={} (v{} → v{})",
-                    item.contentId(), storedVersion, item.version());
+            addSources(card, item);
+            card.linkReport(report.getId());
+            // TODO(계약): 카드 관심사 태그. 현재 claim 페이로드(§4)에 interests/tags 필드가 없어
+            //   card_interest_tags 를 채울 소스가 없다. 페이로드에 태그가 추가되면
+            //   card.replaceInterestTags(item.interests()) 한 줄로 연결(소라·송우 협의).
+            log.info("[PublishWorker] 리포트+카드 갱신 contentId={} (v{}), reportId={}",
+                    item.contentId(), item.version(), report.getId());
             return true;   // dirty checking 으로 flush
         }
 
         Card card = Card.fromExternal(
                 userId, item.contentId(), item.version(), item.title(), item.summary(), null);
         addSources(card, item);
+        card.linkReport(report.getId());
         try {
             cardRepository.save(card);
         } catch (DataIntegrityViolationException e) {
@@ -65,9 +78,24 @@ public class PublishProcessingService {
             log.info("[PublishWorker] 유니크 충돌 → 멱등 처리 contentId={}", item.contentId());
             return true;
         }
-        log.info("[PublishWorker] 카드 발행 contentId={}, userId={}, v{}",
-                item.contentId(), userId, item.version());
+        log.info("[PublishWorker] 리포트+카드 발행 contentId={}, userId={}, v{}, reportId={}",
+                item.contentId(), userId, item.version(), report.getId());
         return true;
+    }
+
+    /** 리포트(본문) upsert. 없으면 생성(저장→id 확보), 있으면 본문·인용 교체 후 반환. */
+    private Report upsertReport(Long userId, PublishItem item) {
+        Report report = reportRepository.findByUserIdAndExternalContentId(userId, item.contentId())
+                .orElse(null);
+        if (report == null) {
+            report = Report.fromExternal(
+                    userId, item.contentId(), item.version(), item.title(), item.summary(), item.body());
+            addCitations(report, item);
+            return reportRepository.save(report);   // id 확보(카드가 참조)
+        }
+        report.updateBody(item.version(), item.title(), item.summary(), item.body());
+        addCitations(report, item);   // updateBody 가 인용을 비웠으므로 다시 채운다
+        return report;   // dirty checking
     }
 
     /** 수신 version 이 저장본보다 큰가. version 없으면(=null) 갱신하지 않는다(구현 안전). */
@@ -84,6 +112,12 @@ public class PublishProcessingService {
     private void addSources(Card card, PublishItem item) {
         if (item.citations() != null) {
             item.citations().forEach(c -> card.addSource(c.title(), c.url()));
+        }
+    }
+
+    private void addCitations(Report report, PublishItem item) {
+        if (item.citations() != null) {
+            item.citations().forEach(c -> report.addCitation(c.title(), c.url()));
         }
     }
 }
