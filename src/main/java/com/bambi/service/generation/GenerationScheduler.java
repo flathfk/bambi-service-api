@@ -1,0 +1,83 @@
+package com.bambi.service.generation;
+
+import com.bambi.service.generation.dto.GenerationRequest;
+import com.bambi.service.user.UserRepository;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.scheduling.annotation.Scheduled;
+import org.springframework.stereotype.Component;
+
+import java.time.LocalDate;
+import java.time.ZoneId;
+import java.util.List;
+
+/**
+ * 콘텐츠 생성 트리거 스케줄러 (송우 가이드 §3.4 "사용자 지정 시간 스케줄 = service 책임").
+ * 지정 시각에 사용자별 생성 Job 을 agent 에 요청한다(정시 호출 방식 — scheduled_at 은 생략).
+ *
+ * <p>멱등키 = {날짜윈도우}-{userId}-{contentType} (예: 2026-07-30-23-interest_news_card)
+ * → 스케줄러 재시도·중복 실행에도 agent 가 Job 을 한 번만 만든다.
+ *
+ * <p>기본 비활성(app.scheduler.generation.enabled=true 로 켬). 실제 생성 연동(P1) 전까지
+ * MockGenerationClient 가 요청만 로깅한다. 사용자 컨텍스트·위키가 없으면 실제 agent 는
+ * 409/INVALID_JOB_PAYLOAD 를 내므로, 실연동 시 대상 사용자 필터가 추가로 필요하다(TODO).
+ */
+@Component
+@ConditionalOnProperty(name = "app.scheduler.generation.enabled", havingValue = "true")
+public class GenerationScheduler {
+
+    private static final Logger log = LoggerFactory.getLogger(GenerationScheduler.class);
+    private static final ZoneId KST = ZoneId.of("Asia/Seoul");
+
+    private final GenerationClient generationClient;
+    private final UserRepository userRepository;
+    private final String contentType;
+    private final String topic;
+
+    public GenerationScheduler(
+            GenerationClient generationClient,
+            UserRepository userRepository,
+            @Value("${app.scheduler.generation.content-type:interest_news_card}") String contentType,
+            @Value("${app.scheduler.generation.topic:오늘의 관심사 뉴스}") String topic) {
+        this.generationClient = generationClient;
+        this.userRepository = userRepository;
+        this.contentType = contentType;
+        this.topic = topic;
+    }
+
+    /** 매일 지정 시각(기본 07:00 KST)에 실행. 한 사용자 실패가 나머지를 막지 않는다. */
+    @Scheduled(cron = "${app.scheduler.generation.cron:0 0 7 * * *}", zone = "Asia/Seoul")
+    public void triggerDailyGeneration() {
+        LocalDate window = LocalDate.now(KST);
+        List<Long> userIds = userRepository.findAllActiveIds();
+        log.info("[GenerationScheduler] 생성 트리거 시작 window={}, users={}", window, userIds.size());
+
+        int requested = 0;
+        for (Long userId : userIds) {
+            try {
+                GenerationRequest request = new GenerationRequest(
+                        idempotencyKey(window, userId, contentType),
+                        topic,
+                        contentType,
+                        null,   // language — 컨텍스트 선호 언어 사용
+                        null);  // scheduled_at — 정시 호출이라 즉시 실행(예약 필요 시 +09:00 포함해 지정)
+                generationClient.requestGeneration(userId, request);
+                requested++;
+            } catch (Exception e) {
+                // agent 다운/일부 실패는 전체를 막지 않는다(컨텍스트 동기화 패턴과 동일).
+                log.warn("[GenerationScheduler] 사용자 생성 요청 실패 userId={} — 건너뜀", userId, e);
+            }
+        }
+        log.info("[GenerationScheduler] 생성 트리거 완료 요청={}/{}", requested, userIds.size());
+    }
+
+    /**
+     * 멱등키 = {날짜윈도우}-{userId}-{contentType}.
+     * 같은 날·같은 사용자·같은 유형은 항상 같은 키 → agent Job 중복 생성 방지.
+     */
+    static String idempotencyKey(LocalDate window, long userId, String contentType) {
+        return window + "-" + userId + "-" + contentType;
+    }
+}
