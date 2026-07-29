@@ -113,6 +113,17 @@ public class Card {
         sources.add(new CardSource(this, title, url));
     }
 
+    /**
+     * 발행 재수신(더 큰 version)으로 카드 내용을 갱신한다.
+     * sources 는 통째로 교체(orphanRemoval 로 이전 것 삭제). 호출부가 새 sources 를 다시 추가한다.
+     */
+    public void updateExternal(Integer version, String title, String summary) {
+        this.externalVersion = version;
+        this.title = title;
+        this.summary = summary;
+        this.sources.clear();
+    }
+
     /** 카드를 리포트(본문)에 연결한다. */
     public void linkReport(Long reportId) {
         this.reportId = reportId;
@@ -173,6 +184,10 @@ public class Card {
 
     public List<CardSource> getSources() {
         return sources;
+    }
+
+    public Integer getExternalVersion() {
+        return externalVersion;
     }
 
     public Long getReportId() {
