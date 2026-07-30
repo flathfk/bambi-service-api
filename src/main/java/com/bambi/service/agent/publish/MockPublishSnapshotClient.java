@@ -6,6 +6,7 @@ import com.bambi.service.agent.publish.dto.ClaimResponse;
 import com.bambi.service.agent.publish.dto.PublishItem;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
 import java.time.OffsetDateTime;
@@ -21,8 +22,13 @@ import java.util.concurrent.atomic.AtomicLong;
  * enqueue(도메인 트리거) → 큐 적재 → claim(워커) → lease 보관 → ack 로 확정 제거.
  * ack 안 된 lease 는 만료 시 다시 claim 대상으로 복귀(유실 없음)한다.
  * 스레드 안전: 큐/lease 맵 모두 concurrent 컬렉션. (분산 락은 P1/Redis)
+ *
+ * <p>{@code app.agent.publish.mode=mock}(미설정 기본)일 때만 등록된다.
+ * {@code http}면 대신 {@link RestClientPublishSnapshotClient}(실제 agent-api 호출)가 뜬다.
+ * 두 구현이 같은 {@link PublishSnapshotClient} 빈이라 조건으로 하나만 올려 충돌을 막는다.
  */
 @Component
+@ConditionalOnProperty(name = "app.agent.publish.mode", havingValue = "mock", matchIfMissing = true)
 public class MockPublishSnapshotClient implements PublishSnapshotClient, MockPublishInbox {
 
     private static final Logger log = LoggerFactory.getLogger(MockPublishSnapshotClient.class);
@@ -43,7 +49,8 @@ public class MockPublishSnapshotClient implements PublishSnapshotClient, MockPub
                 title,
                 "저장한 콘텐츠를 바탕으로 agent 가 생성한 심화 브리핑입니다. (Mock 비동기 발행)",
                 "본문(Mock). 실제 LLM 연동(P1) 시 교체.",
-                List.of(new PublishItem.Citation(sourceTitle, sourceUrl)));
+                List.of(new PublishItem.Citation(sourceTitle, sourceUrl)),
+                List.of("Mock 관심사"));   // 발행 태그(topic) — 실제 agent 는 generation_requests.topic
         ready.add(item);
         log.info("[MockPublish] enqueue contentId={}, userId={}", contentId, userId);
     }

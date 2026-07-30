@@ -31,7 +31,8 @@ class PublishProcessingServiceTest {
 
     private static PublishItem item(String contentId, int version, String title, String summary) {
         return new PublishItem(contentId, "1", version, "hash-" + version, title, summary, "본문-" + version,
-                List.of(new PublishItem.Citation("src", "https://example.com")));
+                List.of(new PublishItem.Citation("src", "https://example.com")),
+                List.of("코스피"));
     }
 
     @Test
@@ -47,13 +48,16 @@ class PublishProcessingServiceTest {
         verify(reportRepository).save(reportCaptor.capture());
         assertThat(reportCaptor.getValue().getBody()).isEqualTo("본문-1");   // body 는 리포트에 보존
         assertThat(reportCaptor.getValue().getCitations()).hasSize(1);
-        verify(cardRepository).save(any(Card.class));                        // 카드(요약)도 저장
+        ArgumentCaptor<Card> cardCaptor = ArgumentCaptor.forClass(Card.class);
+        verify(cardRepository).save(cardCaptor.capture());                   // 카드(요약)도 저장
+        assertThat(cardCaptor.getValue().getInterestTags()).containsExactly("코스피");   // 발행 태그 저장
     }
 
     @Test
     void 더_큰_version_이면_리포트_본문과_카드를_갱신한다() {
         Card existingCard = Card.fromExternal(1L, "c1", 1, "옛 제목", "옛 요약", null);
         existingCard.addSource("old", "https://old");
+        existingCard.replaceInterestTags(List.of("옛 태그"));
         Report existingReport = Report.fromExternal(1L, "c1", 1, "옛 제목", "옛 요약", "옛 본문");
         when(cardRepository.findByUserIdAndExternalContentId(1L, "c1")).thenReturn(Optional.of(existingCard));
         when(reportRepository.findByUserIdAndExternalContentId(1L, "c1")).thenReturn(Optional.of(existingReport));
@@ -69,6 +73,7 @@ class PublishProcessingServiceTest {
         assertThat(existingReport.getExternalVersion()).isEqualTo(2);
         assertThat(existingReport.getBody()).isEqualTo("본문-2");
         assertThat(existingReport.getCitations()).hasSize(1);
+        assertThat(existingCard.getInterestTags()).containsExactly("코스피");   // 태그 통째 교체(옛 태그 제거)
         // 갱신은 dirty checking — 새 row insert(save) 아님
         verify(cardRepository, never()).save(any(Card.class));
         verify(reportRepository, never()).save(any(Report.class));
