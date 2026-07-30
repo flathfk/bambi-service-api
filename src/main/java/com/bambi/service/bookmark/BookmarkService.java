@@ -15,6 +15,9 @@ import com.bambi.service.card.CardRepository;
 import com.bambi.service.card.dto.CardResponse;
 import com.bambi.service.common.error.ApiException;
 import com.bambi.service.common.error.ErrorCode;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -31,16 +34,20 @@ import java.util.List;
 @Service
 public class BookmarkService {
 
+    private static final Logger log = LoggerFactory.getLogger(BookmarkService.class);
+
     private final BookmarkRepository bookmarkRepository;
     private final CardRepository cardRepository;
     private final AgentClient agentClient;
-    private final MockPublishInbox publishInbox;
+    // 발행 큐 트리거. mock 모드에서만 존재한다(인프로세스 큐). http 모드면 비어 있고,
+    // 재처리는 실제 agent POST /generations 트리거로 가야 한다(P1, 영현 스케줄러). ObjectProvider 로 선택 주입.
+    private final ObjectProvider<MockPublishInbox> publishInbox;
     private final ApplicationEventPublisher eventPublisher;
 
     public BookmarkService(BookmarkRepository bookmarkRepository,
                            CardRepository cardRepository,
                            AgentClient agentClient,
-                           MockPublishInbox publishInbox,
+                           ObjectProvider<MockPublishInbox> publishInbox,
                            ApplicationEventPublisher eventPublisher) {
         this.bookmarkRepository = bookmarkRepository;
         this.cardRepository = cardRepository;
@@ -111,7 +118,14 @@ public class BookmarkService {
         Bookmark bookmark = bookmarkRepository.findByIdAndUserIdAndDeletedAtIsNull(bookmarkId, userId)
                 .orElseThrow(() -> new ApiException(ErrorCode.NOT_FOUND, "북마크를 찾을 수 없습니다."));
         String contentId = "bookmark-" + bookmark.getId();
-        publishInbox.enqueue(
+        MockPublishInbox inbox = publishInbox.getIfAvailable();
+        if (inbox == null) {
+            // http 모드 — 인프로세스 큐가 없다. 실제 agent 생성 트리거(POST /generations)는
+            // 생성 스케줄러(P1, 영현)가 담당하므로 여기선 무시한다. TODO: 스케줄러 배선되면 연결.
+            log.debug("[Bookmark] http 모드 재처리 요청 무시(contentId={}) — 실제 발행은 agent 생성 트리거 경유", contentId);
+            return;
+        }
+        inbox.enqueue(
                 userId,
                 contentId,
                 (bookmark.getTitle() != null ? bookmark.getTitle() : "저장한 콘텐츠") + " — 심화 브리핑",
