@@ -36,8 +36,10 @@ app:
     email: ${ADMIN_EMAIL:}
     password: ${ADMIN_PASSWORD:}
   agent:
-    # agent-api(FastAPI) 내부 호출 주소. 내부망 전용이라 인증 없음(배포 전 협의).
+    # agent-api(FastAPI) 내부 호출 주소.
     base-url: ${AGENT_API_BASE:http://localhost:8000}
+    # 내부 API Bearer 토큰 (2026-07-30 도입). 비우면 헤더 미부착 = 무인증 로컬 agent 호환.
+    internal-token: ${AGENT_INTERNAL_TOKEN:}
     # 내부 API prefix (agent 계약: /internal/v1)
     internal-prefix: ${AGENT_API_PREFIX:/internal/v1}
     # 컨텍스트 동기화는 202 폴링이 아니라 가벼운 동기 호출(200) → 짧게.
