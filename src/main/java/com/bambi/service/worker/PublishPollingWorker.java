@@ -69,10 +69,13 @@ public class PublishPollingWorker {
                 acks.add(AckRequest.AckItem.published(
                         item.contentId(), item.version(), item.snapshotHash()));
             } catch (Exception e) {
-                // 실패는 retryable 로 ACK → Backoff 후 ready 복귀. (영구 실패 분류는 P1)
-                log.warn("[PublishWorker] 항목 처리 실패 contentId={} — retryable ACK", item.contentId(), e);
+                // 실패 분류: 잘못된 페이로드(비숫자 user_id 등)는 재전달해도 계속 실패 → 영구(retryable=false).
+                // DB 일시 장애 등은 재시도(retryable=true). 무한 재시도 루프 방지.
+                boolean retryable = isRetryable(e);
+                log.warn("[PublishWorker] 항목 처리 실패 contentId={} — {} ACK",
+                        item.contentId(), retryable ? "retryable" : "permanent", e);
                 acks.add(AckRequest.AckItem.failed(
-                        item.contentId(), item.version(), item.snapshotHash(), true, failureReason(e)));
+                        item.contentId(), item.version(), item.snapshotHash(), retryable, failureReason(e)));
             }
         }
 
@@ -82,6 +85,16 @@ public class PublishPollingWorker {
             // ACK 실패해도 lease 만료 후 재-claim 되므로 유실 없음.
             log.warn("[PublishWorker] ack 실패 batchId={} — lease 만료 후 재처리", claimed.batchId(), e);
         }
+    }
+
+    /**
+     * 재시도 가능한 실패인가.
+     * 잘못된 페이로드(비숫자 user_id → IllegalArgumentException 등)는 재전달해도 계속 실패하므로
+     * 영구 실패(false)로 ACK 해 agent 가 재-발행하지 않게 한다(무한 루프 방지).
+     * 그 외(DB 일시 장애 등)는 재시도(true) → Backoff 후 재-claim.
+     */
+    private static boolean isRetryable(Exception e) {
+        return !(e instanceof IllegalArgumentException);
     }
 
     /**
