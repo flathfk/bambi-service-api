@@ -59,9 +59,7 @@ public class PublishProcessingService {
             card.updateExternal(item.version(), item.title(), item.summary());
             addSources(card, item);
             card.linkReport(report.getId());
-            // TODO(계약): 카드 관심사 태그. 현재 claim 페이로드(§4)에 interests/tags 필드가 없어
-            //   card_interest_tags 를 채울 소스가 없다. 페이로드에 태그가 추가되면
-            //   card.replaceInterestTags(item.interests()) 한 줄로 연결(소라·송우 협의).
+            card.replaceInterestTags(item.tags());   // 발행 태그(topic) 통째 교체 — 재수신 시 최신으로
             log.info("[PublishWorker] 리포트+카드 갱신 contentId={} (v{}), reportId={}",
                     item.contentId(), item.version(), report.getId());
             return true;   // dirty checking 으로 flush
@@ -71,6 +69,7 @@ public class PublishProcessingService {
                 userId, item.contentId(), item.version(), item.title(), item.summary(), null);
         addSources(card, item);
         card.linkReport(report.getId());
+        card.replaceInterestTags(item.tags());   // 발행 태그(topic) 저장 — 없으면(null/빈) no-op
         try {
             cardRepository.save(card);
         } catch (DataIntegrityViolationException e) {

@@ -51,6 +51,7 @@ class RestClientPublishSnapshotClientTest {
                    {"content_id":"bookmark-9","user_id":"23","version":2,"snapshot_hash":"h9",
                     "title":"심화 브리핑","summary":"요약","body":"본문 전체",
                     "citations":[{"title":"출처","url":"https://ex.com"}],
+                    "tags":["코스피"],
                     "created_at":"2026-07-30T01:00:00Z"}]}
                 """;
         server.expect(requestTo("http://agent.local/internal/v1/publish-snapshot-batches/claim"))
@@ -71,6 +72,7 @@ class RestClientPublishSnapshotClientTest {
         assertThat(resp.items().get(0).body()).isEqualTo("본문 전체");
         assertThat(resp.items().get(0).citations()).hasSize(1);
         assertThat(resp.items().get(0).citations().get(0).url()).isEqualTo("https://ex.com");
+        assertThat(resp.items().get(0).tags()).containsExactly("코스피");   // 발행 태그 파싱
     }
 
     @Test
