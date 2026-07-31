@@ -22,7 +22,9 @@ import static org.mockito.Mockito.when;
 class CardServiceTest {
 
     private final CardRepository cardRepository = mock(CardRepository.class);
-    private final CardService service = new CardService(cardRepository);
+    private final com.bambi.service.report.ReportRepository reportRepository =
+            mock(com.bambi.service.report.ReportRepository.class);
+    private final CardService service = new CardService(cardRepository, reportRepository);
 
     @Test
     void 소유자는_자기_카드를_공개로_바꾼다() {
