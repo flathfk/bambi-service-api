@@ -70,4 +70,17 @@ public class AuthService {
         String token = tokenProvider.createToken(user.getId(), user.getEmail(), roleNames);
         return AuthResponse.of(token, tokenProvider.getExpirationMinutes(), UserSummary.from(user));
     }
+
+    /**
+     * 현재 사용자 조회(me). 로그인과 동일한 UserSummary 로 통일 — 토큰만으로 만들던
+     * {id,email} 응답이 프론트 User 타입(displayName·roles 필수)과 어긋나던 버그 픽스.
+     * 토큰은 유효한데 사용자가 삭제된 경우는 인증 실패로 취급한다.
+     */
+    @Transactional(readOnly = true)
+    public UserSummary me(Long userId) {
+        User user = userRepository.findById(userId)
+                .filter(u -> u.getDeletedAt() == null)
+                .orElseThrow(() -> new ApiException(ErrorCode.AUTH_INVALID_TOKEN));
+        return UserSummary.from(user);
+    }
 }

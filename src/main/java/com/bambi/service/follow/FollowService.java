@@ -66,6 +66,8 @@ public class FollowService {
                 target.getPublicId(),
                 target.getUsername(),
                 target.getDisplayName(),
+                target.getBio(),
+                target.getCreatedAt(),
                 followRepository.countByFolloweeId(targetId),
                 followRepository.countByFollowerId(targetId),
                 following,
