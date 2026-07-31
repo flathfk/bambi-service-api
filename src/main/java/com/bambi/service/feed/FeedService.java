@@ -135,6 +135,49 @@ public class FeedService {
                 .toList();
     }
 
+    /**
+     * 작성자별 공개 카드(프로필 화면 몸통, 07-31). PUBLIC 카드만 최신순 —
+     * 본인이 자기 프로필을 봐도 비공개 카드는 여기 안 나온다(그건 내 피드 몫).
+     * @param viewerId 조회자 id. 비로그인(게스트)이면 null — liked 는 전부 false.
+     */
+    @Transactional(readOnly = true)
+    public List<PublicCardResponse> publicCardsByAuthor(Long viewerId, String authorPublicId, int limit) {
+        User author = resolveAuthor(authorPublicId);
+        List<Card> cards = cardRepository.findPublicFeedByAuthors(
+                List.of(author.getId()), PageRequest.of(0, clampLimit(limit)));
+        if (cards.isEmpty()) {
+            return List.of();
+        }
+
+        List<Long> cardIds = cards.stream().map(Card::getId).toList();
+        Map<Long, Long> likeCounts = likeRepository.countByCardIds(cardIds).stream()
+                .collect(Collectors.toMap(LikeRepository.CardLikeCount::getCardId,
+                        LikeRepository.CardLikeCount::getCount));
+        Set<Long> likedIds = viewerId == null
+                ? Set.of()
+                : new HashSet<>(likeRepository.findLikedCardIds(viewerId, cardIds));
+
+        return cards.stream()
+                .map(card -> PublicCardResponse.from(
+                        card,
+                        author,
+                        likeCounts.getOrDefault(card.getId(), 0L),
+                        likedIds.contains(card.getId())))
+                .toList();
+    }
+
+    /** publicId 로 살아있는 작성자 조회. 형식 오류/없음은 존재 노출 없이 404(프로필과 동일 정책). */
+    private User resolveAuthor(String publicId) {
+        UUID uuid;
+        try {
+            uuid = UUID.fromString(publicId);
+        } catch (IllegalArgumentException e) {
+            throw new ApiException(ErrorCode.NOT_FOUND, "사용자를 찾을 수 없습니다.");
+        }
+        return userRepository.findByPublicIdAndDeletedAtIsNull(uuid)
+                .orElseThrow(() -> new ApiException(ErrorCode.NOT_FOUND, "사용자를 찾을 수 없습니다."));
+    }
+
     private int clampLimit(int limit) {
         if (limit <= 0) {
             return DEFAULT_LIMIT;

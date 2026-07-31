@@ -47,6 +47,10 @@ public class User {
     @Column(name = "display_name", length = 100)
     private String displayName;
 
+    // 프로필 소개문(V8). 앱 검증 120자 — 컬럼은 여유 300.
+    @Column(length = 300)
+    private String bio;
+
     @CreationTimestamp
     @Column(name = "created_at", nullable = false, updatable = false)
     private OffsetDateTime createdAt;
@@ -100,6 +104,24 @@ public class User {
 
     public String getDisplayName() {
         return displayName;
+    }
+
+    public String getBio() {
+        return bio;
+    }
+
+    /**
+     * 프로필 편집(PUT /api/users/me). username 유일성 검증은 서비스 책임 —
+     * 여기서는 값 반영만 한다. null username 은 "핸들 미설정 유지"가 아니라
+     * 서비스가 미변경 판단 후 호출하지 않는 방식이라 도달하지 않는다.
+     */
+    public void updateProfile(String displayName, String bio) {
+        this.displayName = displayName;
+        this.bio = bio;
+    }
+
+    public void changeUsername(String username) {
+        this.username = username;
     }
 
     public OffsetDateTime getCreatedAt() {

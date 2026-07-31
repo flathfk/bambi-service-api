@@ -101,4 +101,64 @@ class FeedServiceTest {
         // 팔로잉 대상 조회조차 없어야 한다
         verify(followRepository, never()).findFolloweeIds(anyLong());
     }
+
+    @Test
+    void 작성자별_공개카드는_그_작성자의_PUBLIC_카드만_최신순으로_준다() {
+        UUID authorPublicId = UUID.randomUUID();
+        User author = mock(User.class);
+        when(author.getId()).thenReturn(2L);
+        when(author.getPublicId()).thenReturn(authorPublicId);
+        when(userRepository.findByPublicIdAndDeletedAtIsNull(authorPublicId))
+                .thenReturn(java.util.Optional.of(author));
+
+        Card card = mock(Card.class);
+        when(card.getId()).thenReturn(10L);
+        when(card.getPublicId()).thenReturn(UUID.randomUUID());
+        when(card.getSources()).thenReturn(List.of());
+        when(cardRepository.findPublicFeedByAuthors(anyCollection(), any())).thenReturn(List.of(card));
+        when(likeRepository.countByCardIds(anyCollection())).thenReturn(List.of());
+        when(likeRepository.findLikedCardIds(anyLong(), anyCollection())).thenReturn(List.of(10L));
+
+        List<PublicCardResponse> cards = service.publicCardsByAuthor(1L, authorPublicId.toString(), 20);
+
+        assertThat(cards).hasSize(1);
+        assertThat(cards.get(0).author().publicId()).isEqualTo(authorPublicId);
+        assertThat(cards.get(0).liked()).isTrue();
+        // PUBLIC 전용 쿼리(findPublicFeedByAuthors)를 써야 한다 — 비공개 카드 유출 방지
+        verify(cardRepository, never()).findByUserIdAndDeletedAtIsNullOrderByCreatedAtDesc(anyLong());
+    }
+
+    @Test
+    void 작성자별_공개카드_게스트는_liked_조회_없이_전부_false() {
+        UUID authorPublicId = UUID.randomUUID();
+        User author = mock(User.class);
+        when(author.getId()).thenReturn(2L);
+        when(userRepository.findByPublicIdAndDeletedAtIsNull(authorPublicId))
+                .thenReturn(java.util.Optional.of(author));
+        Card card = mock(Card.class);
+        when(card.getId()).thenReturn(10L);
+        when(card.getPublicId()).thenReturn(UUID.randomUUID());
+        when(card.getSources()).thenReturn(List.of());
+        when(cardRepository.findPublicFeedByAuthors(anyCollection(), any())).thenReturn(List.of(card));
+        when(likeRepository.countByCardIds(anyCollection())).thenReturn(List.of());
+
+        List<PublicCardResponse> cards = service.publicCardsByAuthor(null, authorPublicId.toString(), 20);
+
+        assertThat(cards).hasSize(1);
+        assertThat(cards.get(0).liked()).isFalse();
+        verify(likeRepository, never()).findLikedCardIds(any(), anyCollection());
+    }
+
+    @Test
+    void 작성자별_공개카드_없는_사용자나_깨진_publicId_는_404() {
+        when(userRepository.findByPublicIdAndDeletedAtIsNull(any())).thenReturn(java.util.Optional.empty());
+
+        ApiException notFound = catchThrowableOfType(
+                () -> service.publicCardsByAuthor(1L, UUID.randomUUID().toString(), 20), ApiException.class);
+        ApiException broken = catchThrowableOfType(
+                () -> service.publicCardsByAuthor(1L, "not-a-uuid", 20), ApiException.class);
+
+        assertThat(notFound.getErrorCode()).isEqualTo(ErrorCode.NOT_FOUND);
+        assertThat(broken.getErrorCode()).isEqualTo(ErrorCode.NOT_FOUND);   // 존재/형식 구분 노출 없음
+    }
 }

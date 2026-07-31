@@ -22,6 +22,9 @@ spring:
     # V1__init.sql 이 service/agent 스키마를 CREATE 한다. history 테이블은 service 에.
     schemas: service
     default-schema: service
+    # 번호 예약 병렬 작업(V6=소라·V7=영현·V8=우석, 07-31) — 머지 순서가 번호 순서와
+    # 다를 수 있어, 큰 번호가 먼저 배포돼도 늦게 온 작은 번호를 적용하게 허용한다.
+    out-of-order: true
 
 app:
   # docker-compose 가 주입하는 환경변수 (없으면 기본값)

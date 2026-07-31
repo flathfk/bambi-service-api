@@ -65,7 +65,8 @@ public class SecurityConfig {
                         // 공개 피드·공개 프로필은 비로그인 열람 허용 (팀 정책: 홈=공개 SNS).
                         // GET 만 공개 — 팔로우/좋아요/공개설정 등 쓰기는 아래 authenticated 로 막힌다.
                         // 팔로잉 스코프(?following=true)는 로그인 전제라 서비스에서 401 을 던진다.
-                        .requestMatchers(HttpMethod.GET, "/api/feed/public", "/api/users/*/profile").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/feed/public", "/api/users/*/profile",
+                                "/api/users/*/cards").permitAll()
                         .requestMatchers("/api/admin/**").hasRole("ADMIN")
                         .anyRequest().authenticated())
                 .exceptionHandling(eh -> eh

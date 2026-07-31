@@ -38,9 +38,9 @@ public class AuthController {
         return ApiResponse.ok(authService.login(request));
     }
 
-    /** 현재 로그인 사용자 확인 (토큰 검증용) */
+    /** 현재 로그인 사용자 확인. 로그인 응답과 동일한 UserSummary 를 준다(프론트 User 타입 정합). */
     @GetMapping("/me")
-    public ApiResponse<AuthPrincipal> me(@AuthenticationPrincipal AuthPrincipal principal) {
-        return ApiResponse.ok(principal);
+    public ApiResponse<UserSummary> me(@AuthenticationPrincipal AuthPrincipal principal) {
+        return ApiResponse.ok(authService.me(principal.id()));
     }
 }

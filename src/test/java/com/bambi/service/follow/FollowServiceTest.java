@@ -82,4 +82,20 @@ class FollowServiceTest {
         assertThat(res.followerCount()).isEqualTo(0L);
         verify(followRepository).deleteRelation(1L, 2L);
     }
+
+    @Test
+    void 프로필에는_bio_와_가입시점이_들어간다() {
+        java.time.OffsetDateTime joined = java.time.OffsetDateTime.parse("2026-03-01T00:00:00+09:00");
+        User target = mock(User.class);
+        when(target.getId()).thenReturn(2L);
+        when(target.getBio()).thenReturn("매일 아침 브리핑");
+        when(target.getCreatedAt()).thenReturn(joined);
+        when(userRepository.findByPublicIdAndDeletedAtIsNull(any())).thenReturn(Optional.of(target));
+
+        var profile = service.profile(null, UUID.randomUUID().toString());   // 게스트 열람
+
+        assertThat(profile.bio()).isEqualTo("매일 아침 브리핑");
+        assertThat(profile.joinedAt()).isEqualTo(joined);
+        assertThat(profile.following()).isFalse();   // 게스트는 팔로우 여부 조회 없이 false
+    }
 }
