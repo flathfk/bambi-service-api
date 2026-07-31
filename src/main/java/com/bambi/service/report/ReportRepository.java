@@ -17,4 +17,11 @@ public interface ReportRepository extends JpaRepository<Report, Long> {
      */
     @EntityGraph(attributePaths = "citations")
     Optional<Report> findByPublicIdAndUserIdAndDeletedAtIsNull(UUID publicId, Long userId);
+
+    /**
+     * 리포트 단건 조회 (소유자 검증 없이 publicId 로만, soft delete 제외).
+     * 접근 권한(내 것 or PUBLIC 카드 참조)은 서비스에서 판단한다. citations 함께 로딩.
+     */
+    @EntityGraph(attributePaths = "citations")
+    Optional<Report> findByPublicIdAndDeletedAtIsNull(UUID publicId);
 }

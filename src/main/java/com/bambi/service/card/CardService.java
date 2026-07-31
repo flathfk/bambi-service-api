@@ -3,6 +3,8 @@ package com.bambi.service.card;
 import com.bambi.service.card.dto.CardResponse;
 import com.bambi.service.common.error.ApiException;
 import com.bambi.service.common.error.ErrorCode;
+import com.bambi.service.report.Report;
+import com.bambi.service.report.ReportRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -17,21 +19,24 @@ import java.util.UUID;
 public class CardService {
 
     private final CardRepository cardRepository;
+    private final ReportRepository reportRepository;
 
-    public CardService(CardRepository cardRepository) {
+    public CardService(CardRepository cardRepository, ReportRepository reportRepository) {
         this.cardRepository = cardRepository;
+        this.reportRepository = reportRepository;
     }
 
     /**
      * 카드 단건 상세. 프론트 카드 상세 화면의 새로고침/직접 진입용.
      * publicId 문자열이 UUID 형식이 아니거나(=존재할 수 없는 id) 내 카드가 아니면 NOT_FOUND.
+     * reportId(본문 publicId)를 함께 내려 프론트가 본문 조회로 이동할 수 있게 한다.
      */
     @Transactional(readOnly = true)
     public CardResponse get(Long userId, String publicId) {
         UUID uuid = parseOrNotFound(publicId);
         Card card = cardRepository.findByPublicIdAndUserIdAndDeletedAtIsNull(uuid, userId)
                 .orElseThrow(() -> new ApiException(ErrorCode.NOT_FOUND, "카드를 찾을 수 없습니다."));
-        return CardResponse.from(card);
+        return CardResponse.from(card, reportPublicId(card));
     }
 
     /**
@@ -44,7 +49,17 @@ public class CardService {
         Card card = cardRepository.findByPublicIdAndUserIdAndDeletedAtIsNull(uuid, userId)
                 .orElseThrow(() -> new ApiException(ErrorCode.NOT_FOUND, "카드를 찾을 수 없습니다."));
         card.changeVisibility(visibility);   // dirty checking 으로 flush
-        return CardResponse.from(card);
+        return CardResponse.from(card, reportPublicId(card));
+    }
+
+    /** 카드가 참조하는 리포트의 publicId(없으면 null). 단건 조회라 1쿼리로 충분. */
+    private UUID reportPublicId(Card card) {
+        if (card.getReportId() == null) {
+            return null;
+        }
+        return reportRepository.findById(card.getReportId())
+                .map(Report::getPublicId)
+                .orElse(null);
     }
 
     /** 잘못된 UUID 형식은 500 대신 404 로 다룬다(존재할 수 없는 카드). */

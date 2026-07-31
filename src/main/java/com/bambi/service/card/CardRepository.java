@@ -49,6 +49,9 @@ public interface CardRepository extends JpaRepository<Card, Long> {
     /** 공개 프로필의 공개 카드 수. */
     long countByUserIdAndVisibilityAndDeletedAtIsNull(Long userId, String visibility);
 
+    /** 이 리포트를 참조하는 특정 공개설정(PUBLIC 등) 카드가 살아있나 — 리포트 본문 접근 권한 판단용. */
+    boolean existsByReportIdAndVisibilityAndDeletedAtIsNull(Long reportId, String visibility);
+
     /**
      * 공개 피드(전체) — PUBLIC 카드를 최신순으로.
      * 컬렉션(sources) fetch join + Pageable 은 LIMIT 을 SQL 로 못 내려 전량 로딩(HHH000104)하므로

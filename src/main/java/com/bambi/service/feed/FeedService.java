@@ -8,6 +8,8 @@ import com.bambi.service.common.error.ErrorCode;
 import com.bambi.service.feed.dto.PublicCardResponse;
 import com.bambi.service.follow.FollowRepository;
 import com.bambi.service.like.LikeRepository;
+import com.bambi.service.report.Report;
+import com.bambi.service.report.ReportRepository;
 import com.bambi.service.user.User;
 import com.bambi.service.user.UserRepository;
 import org.springframework.data.domain.PageRequest;
@@ -18,7 +20,9 @@ import org.springframework.transaction.annotation.Transactional;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
+import java.util.UUID;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
@@ -38,22 +42,44 @@ public class FeedService {
     private final LikeRepository likeRepository;
     private final FollowRepository followRepository;
     private final UserRepository userRepository;
+    private final ReportRepository reportRepository;
 
     public FeedService(CardRepository cardRepository,
                        LikeRepository likeRepository,
                        FollowRepository followRepository,
-                       UserRepository userRepository) {
+                       UserRepository userRepository,
+                       ReportRepository reportRepository) {
         this.cardRepository = cardRepository;
         this.likeRepository = likeRepository;
         this.followRepository = followRepository;
         this.userRepository = userRepository;
+        this.reportRepository = reportRepository;
     }
 
     @Transactional(readOnly = true)
     public List<CardResponse> myFeed(Long userId) {
-        return cardRepository.findByUserIdAndDeletedAtIsNullOrderByCreatedAtDesc(userId).stream()
-                .map(CardResponse::from)
+        List<Card> cards = cardRepository.findByUserIdAndDeletedAtIsNullOrderByCreatedAtDesc(userId);
+        // 카드→리포트 publicId 배치 매핑 (프론트가 본문으로 이동할 진입점, N+1 회피)
+        Map<Long, UUID> reportPublicIds = reportPublicIdsByReportId(cards);
+        return cards.stream()
+                // 리포트 없는(즉시) 카드는 reportId=null. 불변맵은 get(null) 에서 NPE 라 null 키 조회를 피한다.
+                .map(c -> CardResponse.from(c,
+                        c.getReportId() == null ? null : reportPublicIds.get(c.getReportId())))
                 .toList();
+    }
+
+    /** 카드들이 참조하는 리포트 id → publicId 매핑 (1 IN 쿼리). 리포트 없는 카드는 빠진다. */
+    private Map<Long, UUID> reportPublicIdsByReportId(List<Card> cards) {
+        List<Long> reportIds = cards.stream()
+                .map(Card::getReportId)
+                .filter(Objects::nonNull)
+                .distinct()
+                .toList();
+        if (reportIds.isEmpty()) {
+            return Map.of();
+        }
+        return reportRepository.findAllById(reportIds).stream()
+                .collect(Collectors.toMap(Report::getId, Report::getPublicId));
     }
 
     /**

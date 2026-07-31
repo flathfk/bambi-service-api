@@ -5,8 +5,10 @@ import com.bambi.service.card.CardRepository;
 import com.bambi.service.common.error.ApiException;
 import com.bambi.service.common.error.ErrorCode;
 import com.bambi.service.feed.dto.PublicCardResponse;
+import com.bambi.service.card.dto.CardResponse;
 import com.bambi.service.follow.FollowRepository;
 import com.bambi.service.like.LikeRepository;
+import com.bambi.service.report.Report;
 import com.bambi.service.user.User;
 import com.bambi.service.user.UserRepository;
 import org.junit.jupiter.api.Test;
@@ -35,8 +37,10 @@ class FeedServiceTest {
     private final LikeRepository likeRepository = mock(LikeRepository.class);
     private final FollowRepository followRepository = mock(FollowRepository.class);
     private final UserRepository userRepository = mock(UserRepository.class);
+    private final com.bambi.service.report.ReportRepository reportRepository =
+            mock(com.bambi.service.report.ReportRepository.class);
     private final FeedService service =
-            new FeedService(cardRepository, likeRepository, followRepository, userRepository);
+            new FeedService(cardRepository, likeRepository, followRepository, userRepository, reportRepository);
 
     @Test
     void 게스트도_공개피드를_볼_수_있고_liked_는_전부_false() {
@@ -58,6 +62,33 @@ class FeedServiceTest {
         assertThat(feed.get(0).liked()).isFalse();
         // 게스트는 "내 좋아요" 조회 쿼리를 아예 날리지 않아야 한다
         verify(likeRepository, never()).findLikedCardIds(any(), anyCollection());
+    }
+
+    @Test
+    void myFeed_리포트없는_카드와_있는_카드를_섞어_NPE없이_반환한다() {
+        // 리포트 없는(즉시) 카드 — reportId=null (불변맵 get(null) NPE 회귀 방지)
+        Card noReport = mock(Card.class);
+        when(noReport.getReportId()).thenReturn(null);
+        when(noReport.getPublicId()).thenReturn(UUID.randomUUID());
+        when(noReport.getSources()).thenReturn(List.of());
+        // 리포트 있는 카드 — reportId 채워짐
+        Card withReport = mock(Card.class);
+        when(withReport.getReportId()).thenReturn(100L);
+        when(withReport.getPublicId()).thenReturn(UUID.randomUUID());
+        when(withReport.getSources()).thenReturn(List.of());
+        when(cardRepository.findByUserIdAndDeletedAtIsNullOrderByCreatedAtDesc(1L))
+                .thenReturn(List.of(noReport, withReport));
+        Report report = mock(Report.class);
+        when(report.getId()).thenReturn(100L);
+        UUID reportPublicId = UUID.randomUUID();
+        when(report.getPublicId()).thenReturn(reportPublicId);
+        when(reportRepository.findAllById(any())).thenReturn(List.of(report));
+
+        List<CardResponse> feed = service.myFeed(1L);
+
+        assertThat(feed).hasSize(2);
+        assertThat(feed.get(0).reportId()).isNull();                 // 즉시 카드
+        assertThat(feed.get(1).reportId()).isEqualTo(reportPublicId); // 리포트 연결 카드
     }
 
     @Test
