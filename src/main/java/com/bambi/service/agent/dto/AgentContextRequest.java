@@ -12,6 +12,9 @@ import java.util.List;
  * @param plan                   요금제 (free | paid)
  * @param preferredLanguage      선호 언어 (기본 ko)
  * @param personalizationEnabled 개인화 사용 여부
+ * @param interestTaxonomyVersion 선택한 Category·Topic ID를 해석할 관심사 분류체계 버전
+ * @param selectedCategoryIds    온보딩에서 선택한 Category 안정 ID 목록
+ * @param selectedTopicIds       온보딩에서 선택한 Topic 안정 ID 목록
  * @param blockedInterestIds     사용자가 차단(삭제)한 관심사 ID 목록
  * @param blockedSourceIds       사용자가 차단(삭제)한 소스 ID 목록
  */
@@ -20,6 +23,9 @@ public record AgentContextRequest(
         @JsonProperty("plan") String plan,
         @JsonProperty("preferred_language") String preferredLanguage,
         @JsonProperty("personalization_enabled") boolean personalizationEnabled,
+        @JsonProperty("interest_taxonomy_version") String interestTaxonomyVersion,
+        @JsonProperty("selected_category_ids") List<String> selectedCategoryIds,
+        @JsonProperty("selected_topic_ids") List<String> selectedTopicIds,
         @JsonProperty("blocked_interest_ids") List<String> blockedInterestIds,
         @JsonProperty("blocked_source_ids") List<String> blockedSourceIds) {
 
@@ -29,6 +35,23 @@ public record AgentContextRequest(
      * 붙으면 이 자리에서 저장된 사용자 설정으로 채우면 된다. 버전은 호출부가 단조 증가로 넘긴다.
      */
     public static AgentContextRequest forVersion(int version) {
-        return new AgentContextRequest(version, "free", "ko", true, List.of(), List.of());
+        return forVersion(version, null, List.of(), List.of());
+    }
+
+    /** 지정 분류체계에서 선택한 Category·Topic을 포함한 컨텍스트 요청을 만든다. */
+    public static AgentContextRequest forVersion(int version,
+                                                 String interestTaxonomyVersion,
+                                                 List<String> selectedCategoryIds,
+                                                 List<String> selectedTopicIds) {
+        return new AgentContextRequest(
+                version,
+                "free",
+                "ko",
+                true,
+                interestTaxonomyVersion,
+                List.copyOf(selectedCategoryIds),
+                List.copyOf(selectedTopicIds),
+                List.of(),
+                List.of());
     }
 }

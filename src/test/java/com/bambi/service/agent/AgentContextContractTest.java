@@ -64,13 +64,16 @@ class AgentContextContractTest {
     }
 
     @Test
-    @DisplayName("본문 키는 계약대로 snake_case 6개 필드 — 최초 가입 기본값")
+    @DisplayName("본문 키는 계약대로 snake_case 필드 — 최초 가입은 선택 목록이 비어 있다")
     void body_snakeCaseFields() {
         server.expect(requestTo(CONTEXT_URL))
                 .andExpect(jsonPath("$.context_version").value(1))
                 .andExpect(jsonPath("$.plan").value("free"))
                 .andExpect(jsonPath("$.preferred_language").value("ko"))
                 .andExpect(jsonPath("$.personalization_enabled").value(true))
+                .andExpect(jsonPath("$.interest_taxonomy_version").value(org.hamcrest.Matchers.nullValue()))
+                .andExpect(jsonPath("$.selected_category_ids").value(empty()))
+                .andExpect(jsonPath("$.selected_topic_ids").value(empty()))
                 .andExpect(jsonPath("$.blocked_interest_ids").value(empty()))
                 .andExpect(jsonPath("$.blocked_source_ids").value(empty()))
                 .andRespond(withSuccess("{\"context_version\":1}", MediaType.APPLICATION_JSON));
@@ -87,6 +90,9 @@ class AgentContextContractTest {
                 .andExpect(jsonPath("$.contextVersion").doesNotExist())
                 .andExpect(jsonPath("$.preferredLanguage").doesNotExist())
                 .andExpect(jsonPath("$.personalizationEnabled").doesNotExist())
+                .andExpect(jsonPath("$.interestTaxonomyVersion").doesNotExist())
+                .andExpect(jsonPath("$.selectedCategoryIds").doesNotExist())
+                .andExpect(jsonPath("$.selectedTopicIds").doesNotExist())
                 .andExpect(jsonPath("$.blockedInterestIds").doesNotExist())
                 .andExpect(jsonPath("$.blockedSourceIds").doesNotExist())
                 .andRespond(withSuccess("{\"context_version\":1}", MediaType.APPLICATION_JSON));

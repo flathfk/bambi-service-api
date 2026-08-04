@@ -1,49 +1,59 @@
 package com.bambi.service.agent;
 
 import com.bambi.service.agent.dto.AgentContextRequest;
+import com.bambi.service.agent.outbox.AgentContextOutboxStore;
+import com.bambi.service.onboarding.UserOnboardingSelection;
+import com.bambi.service.onboarding.UserOnboardingSelectionRepository;
 import com.bambi.service.user.User;
 import com.bambi.service.user.UserRepository;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 /**
- * 사용자 컨텍스트를 agent 에 반영한다(계약 §4).
+ * 사용자 컨텍스트 동기화 요청을 Transactional Outbox에 적재한다(계약 §4).
  *
  * <p>agent 는 {@code context_version} 이 사용자별 단조 증가일 것을 요구하고, 같거나 작은 값을
- * 재전송하면 STALE_CONTEXT_VERSION 으로 거부한다(§4.3). 그래서 보낼 때마다 service-db 의
- * {@code users.agent_context_version} 을 +1 해 저장한 뒤 그 값을 싣는다.
+ * 재전송하면 STALE_CONTEXT_VERSION 으로 거부한다(§4.3). 그래서 적재할 때 service-db 의
+ * {@code users.agent_context_version} 을 잠근 상태로 +1 하고, 같은 트랜잭션에 payload를 보존한다.
  * 가입뿐 아니라 이후 설정 변경(플랜·개인화·차단) 재동기도 이 진입점을 쓰면 된다.
  */
 @Service
 public class AgentContextSyncService {
 
     private final UserRepository userRepository;
-    private final AgentGateway agentGateway;
+    private final UserOnboardingSelectionRepository onboardingSelectionRepository;
+    private final AgentContextOutboxStore outboxStore;
 
-    public AgentContextSyncService(UserRepository userRepository, AgentGateway agentGateway) {
+    public AgentContextSyncService(UserRepository userRepository,
+                                   UserOnboardingSelectionRepository onboardingSelectionRepository,
+                                   AgentContextOutboxStore outboxStore) {
         this.userRepository = userRepository;
-        this.agentGateway = agentGateway;
+        this.onboardingSelectionRepository = onboardingSelectionRepository;
+        this.outboxStore = outboxStore;
     }
 
     /**
-     * 사용자 컨텍스트를 agent 에 동기화한다. 버전을 +1 해 저장한 뒤(짧은 트랜잭션) 그 버전으로 PUT 한다.
-     * HTTP 는 트랜잭션 밖에서 일어나며, 전송이 실패해도 버전은 이미 올라가 있어(단조 증가 유지)
-     * 다음 재시도가 더 큰 버전으로 반영한다.
+     * 사용자 컨텍스트 버전과 payload를 호출한 비즈니스 트랜잭션에 원자적으로 적재한다.
+     * 실제 HTTP는 커밋 뒤 Dispatcher가 처리하므로 실패해도 Outbox 행이 재시도 근거로 남는다.
      */
-    public void syncUserContext(long userId) {
-        int version = allocateNextVersion(userId);
-        agentGateway.syncUserContext(userId, AgentContextRequest.forVersion(version));
-    }
-
-    /**
-     * 사용자의 컨텍스트 버전을 +1 하고 새 값을 반환한다.
-     * {@code save()} 가 자체 트랜잭션으로 영속하므로 HTTP 호출을 트랜잭션 안에 붙잡지 않는다.
-     * 동시 호출은 드물고, 겹쳐서 같은 버전이 나가도 STALE 은 "이미 최신"으로 삼켜지므로 안전하다.
-     */
-    private int allocateNextVersion(long userId) {
-        User user = userRepository.findById(userId)
+    @Transactional
+    public void enqueueUserContext(long userId) {
+        User user = userRepository.findByIdForAgentContextSync(userId)
                 .orElseThrow(() -> new IllegalStateException("컨텍스트 동기화 대상 사용자 없음: " + userId));
-        int next = user.bumpAgentContextVersion();
+        int version = user.bumpAgentContextVersion();
         userRepository.save(user);
-        return next;
+        AgentContextRequest request = onboardingSelectionRepository.findById(userId)
+                .map(selection -> requestFor(version, selection))
+                .orElseGet(() -> AgentContextRequest.forVersion(version));
+        outboxStore.enqueue(userId, request);
+    }
+
+    /** 저장된 온보딩 선택을 지정 Context Version의 Agent 요청으로 변환한다. */
+    private static AgentContextRequest requestFor(int version, UserOnboardingSelection selection) {
+        return AgentContextRequest.forVersion(
+                version,
+                selection.getInterestTaxonomyVersion(),
+                selection.getSelectedCategoryIds(),
+                selection.getSelectedTopicIds());
     }
 }

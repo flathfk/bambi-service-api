@@ -29,6 +29,19 @@ postgres 가 `localhost:5432/bambi` 에 떠 있어야 한다(계정 `bambi`/`bam
 - 에러 코드: HTTP status + 내부 code (`VALIDATION_ERROR`/`AUTH_INVALID_TOKEN`/`FORBIDDEN`/`NOT_FOUND`/`DUPLICATE_RESOURCE`/`INTERNAL_ERROR`)
 - 인증: JWT access token (`Authorization: Bearer <token>`). P0 는 프론트 localStorage 저장 전제.
 
+## Agent 사용자 컨텍스트 전달 보장
+
+회원가입과 온보딩 관심 분류 선택 변경 시 이벤트를 발행한다. `BEFORE_COMMIT` 리스너가 같은
+트랜잭션에 `service.agent_context_outbox` 행을 적재하고, `AFTER_COMMIT` 리스너가 Agent API로
+즉시 전달을 시도한다. Agent 장애·응답 유실·프로세스 중단 시에는 스케줄러가 만료된 lease를
+다시 claim해 같은 `context_version`과 payload를 재전송한다.
+
+- 전달 의미: at-least-once
+- 중복 안전성: Agent의 `context_version` 검증과 `STALE_CONTEXT_VERSION` 성공 처리
+- 재시도: 5초부터 2배 지수 backoff, 기본 최대 1시간
+- 다중 인스턴스: PostgreSQL `FOR UPDATE SKIP LOCKED` + claim token
+- 설정 prefix: `app.agent.context-outbox` / 환경변수 `AGENT_CONTEXT_OUTBOX_*`
+
 ## API (P0 세로 슬라이스)
 
 | Method | Path | 인증 | 설명 |
@@ -38,6 +51,7 @@ postgres 가 `localhost:5432/bambi` 에 떠 있어야 한다(계정 `bambi`/`bam
 | POST | `/api/auth/signup` | 공개 | 회원가입(USER) |
 | POST | `/api/auth/login` | 공개 | 로그인 → 토큰 |
 | GET | `/api/auth/me` | 필요 | 현재 사용자 |
+| GET·PUT | `/api/onboarding/interests` | 필요 | 온보딩 Category·Topic 안정 ID 선택 조회·전체 교체 |
 | GET·POST·PUT·DELETE | `/api/notes[/{id}]` | 필요 | reference CRUD 템플릿 |
 | `/api/admin/**` | | ADMIN | 관리자 전용(예약) |
 

@@ -13,8 +13,8 @@ import org.springframework.util.StringUtils;
 /**
  * 북마크 저장 완료 → agent 위키 원천 처리로 중계.
  *
- * <p>저장 트랜잭션이 커밋된 뒤(AFTER_COMMIT) 실행하고, 중계 실패는 삼켜 저장 자체는 막지 않는다
- * (가입 컨텍스트 동기화와 동일 정책). agent 클리핑 계약이 URL·본문을 모두 요구하므로 분기한다:
+ * <p>저장 트랜잭션이 커밋된 뒤(AFTER_COMMIT) 실행하고, 중계 실패는 삼켜 저장 자체는 막지 않는다.
+ * agent 클리핑 계약이 URL·본문을 모두 요구하므로 분기한다:
  * <ul>
  *   <li>URL + 본문 → clippings (웹 클리핑)
  *   <li>URL 만 → urls (URL 원천)

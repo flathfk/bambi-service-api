@@ -38,6 +38,9 @@ app:
     # 서버 시작 시 두 값이 모두 있으면 ADMIN 계정을 seed 한다 (없으면 skip)
     email: ${ADMIN_EMAIL:}
     password: ${ADMIN_PASSWORD:}
+  onboarding:
+    # workspace ../docs/interest-taxonomy.json의 안정 ID를 해석하는 분류체계 버전.
+    interest-taxonomy-version: ${INTEREST_TAXONOMY_VERSION:1.0.0-draft}
   agent:
     # agent-api(FastAPI) 내부 호출 주소.
     base-url: ${AGENT_API_BASE:http://localhost:8000}
@@ -56,6 +59,16 @@ app:
       # 생성 요청 클라이언트 구현 선택: mock(로그만) | http(실제 agent-api POST /generations 호출)
       # 미설정 시 mock. 스케줄러 자체 on/off 는 app.scheduler.generation.enabled 와 별개.
       mode: ${AGENT_GENERATION_MODE:mock}
+    context-outbox:
+      # 가입·온보딩 변경 컨텍스트를 service-db Outbox에 원자적으로 적재한 뒤 at-least-once 전송한다.
+      enabled: ${AGENT_CONTEXT_OUTBOX_ENABLED:true}
+      poll-interval-ms: ${AGENT_CONTEXT_OUTBOX_POLL_INTERVAL_MS:5000}
+      initial-delay-ms: ${AGENT_CONTEXT_OUTBOX_INITIAL_DELAY_MS:5000}
+      batch-size: ${AGENT_CONTEXT_OUTBOX_BATCH_SIZE:50}
+      lease-seconds: ${AGENT_CONTEXT_OUTBOX_LEASE_SECONDS:30}
+      retry-initial-seconds: ${AGENT_CONTEXT_OUTBOX_RETRY_INITIAL_SECONDS:5}
+      retry-max-seconds: ${AGENT_CONTEXT_OUTBOX_RETRY_MAX_SECONDS:3600}
+      worker-id: ${AGENT_CONTEXT_OUTBOX_WORKER_ID:}
     # 저장 시 동기 Mock 즉시 카드 (P0 관통용 데모 안전판 — 제품 모델은 저장≠생성, 루트 CLAUDE.md).
     # 비동기 발행 경로(claim→report+card)가 검증된 환경에서는 false 로 꺼서 Mock 카드가 실 카드와 섞이지 않게 한다.
     immediate-card:

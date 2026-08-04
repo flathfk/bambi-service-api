@@ -1,7 +1,10 @@
 package com.bambi.service.user;
 
+import jakarta.persistence.LockModeType;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 
 import java.util.List;
 import java.util.Optional;
@@ -25,4 +28,9 @@ public interface UserRepository extends JpaRepository<User, Long> {
     /** 살아있는 사용자 id 목록 — 생성 스케줄러가 사용자별 생성 요청을 돌릴 때 쓴다(엔티티 전체 로딩 회피). */
     @Query("select u.id from User u where u.deletedAt is null")
     List<Long> findAllActiveIds();
+
+    /** 컨텍스트 버전 할당이 겹쳐도 같은 버전이 나오지 않도록 사용자 행을 잠근다. */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select u from User u where u.id = :id")
+    Optional<User> findByIdForAgentContextSync(@Param("id") Long id);
 }

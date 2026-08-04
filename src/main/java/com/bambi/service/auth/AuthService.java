@@ -51,7 +51,7 @@ public class AuthService {
         user.addRole(userRole);
         userRepository.save(user);
 
-        // 가입 커밋 후 agent 에 컨텍스트를 1회 동기화한다(리스너가 AFTER_COMMIT 처리, 실패해도 가입 유지).
+        // BEFORE_COMMIT에 Outbox를 함께 적재하고, AFTER_COMMIT에 agent 전달을 즉시 시도한다.
         eventPublisher.publishEvent(new UserRegisteredEvent(user.getId()));
         return UserSummary.from(user);
     }
