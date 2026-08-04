@@ -6,6 +6,8 @@ import com.bambi.service.admin.AiResponseLog;
 import com.bambi.service.admin.AiResponseLogRepository;
 import com.bambi.service.user.User;
 import com.bambi.service.user.UserRepository;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
@@ -22,13 +24,16 @@ public class AgentCallLogger {
     private final AiRequestLogRepository requestLogRepository;
     private final AiResponseLogRepository responseLogRepository;
     private final UserRepository userRepository;
+    private final ObjectMapper objectMapper;
 
     public AgentCallLogger(AiRequestLogRepository requestLogRepository,
                            AiResponseLogRepository responseLogRepository,
-                           UserRepository userRepository) {
+                           UserRepository userRepository,
+                           ObjectMapper objectMapper) {
         this.requestLogRepository = requestLogRepository;
         this.responseLogRepository = responseLogRepository;
         this.userRepository = userRepository;
+        this.objectMapper = objectMapper;
     }
 
     /**
@@ -59,6 +64,26 @@ public class AgentCallLogger {
         if (requestId == null) {
             return;
         }
-        responseLogRepository.save(new AiResponseLog(requestId, statusCode, latencyMs, responseBody));
+        responseLogRepository.save(new AiResponseLog(
+                requestId, statusCode, latencyMs, normalizeJson(responseBody)));
+    }
+
+    /** JSONB 컬럼에 연결 오류 같은 일반 문자열도 안전하게 저장할 수 있도록 JSON 문자열로 감싼다. */
+    private String normalizeJson(String responseBody) {
+        if (responseBody == null) {
+            return null;
+        }
+        try {
+            if (objectMapper.readTree(responseBody) != null) {
+                return responseBody;
+            }
+        } catch (JsonProcessingException ignored) {
+            // 일반 문자열은 아래에서 JSON string literal로 직렬화한다.
+        }
+        try {
+            return objectMapper.writeValueAsString(responseBody);
+        } catch (JsonProcessingException e) {
+            throw new IllegalStateException("Agent 응답 로그 JSON 직렬화 실패", e);
+        }
     }
 }
