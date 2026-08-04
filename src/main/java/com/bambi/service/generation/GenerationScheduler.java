@@ -20,9 +20,12 @@ import java.util.List;
  * <p>멱등키 = {날짜윈도우}-{userId}-{contentType} (예: 2026-07-30-23-interest_news_card)
  * → 스케줄러 재시도·중복 실행에도 agent 가 Job 을 한 번만 만든다.
  *
- * <p>기본 비활성(app.scheduler.generation.enabled=true 로 켬). 실제 생성 연동(P1) 전까지
- * MockGenerationClient 가 요청만 로깅한다. 사용자 컨텍스트·위키가 없으면 실제 agent 는
- * 409/INVALID_JOB_PAYLOAD 를 내므로, 실연동 시 대상 사용자 필터가 추가로 필요하다(TODO).
+ * <p>기본 비활성(app.scheduler.generation.enabled=true 로 켬). 클라이언트 구현은
+ * app.agent.generation.mode(mock|http)로 고르며, http 면 {@link RestClientGenerationClient} 가 실제로 호출한다.
+ *
+ * <p>대상은 활성 사용자 전원이다 — 온보딩에서 고른 관심사가 위키에 편입돼 가입자는 위키를 갖기 때문
+ * (2026-08-04 송우 확인, 편입 로직은 agent 쪽에서 보강). 혹시 컨텍스트가 없는 사용자는 agent 가
+ * 409/USER_CONTEXT_REQUIRED 를 내는데, 아래 per-user try/catch 가 그 사용자만 건너뛴다.
  */
 @Component
 @ConditionalOnProperty(name = "app.scheduler.generation.enabled", havingValue = "true")
