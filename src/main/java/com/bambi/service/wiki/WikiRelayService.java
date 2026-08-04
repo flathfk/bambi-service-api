@@ -12,6 +12,10 @@ import org.springframework.stereotype.Service;
 @Service
 public class WikiRelayService {
 
+    // 연결 상위 노드 limit 은 agent 계약상 1~100.
+    private static final int MIN_TOP_NODES = 1;
+    private static final int MAX_TOP_NODES = 100;
+
     private final AgentWikiClient wikiClient;
 
     public WikiRelayService(AgentWikiClient wikiClient) {
@@ -27,7 +31,9 @@ public class WikiRelayService {
         return wikiClient.getDocuments(userId).withoutSchema();
     }
 
+    /** 연결 상위 노드 — 범위를 벗어난 limit(0·음수·100 초과)은 계약 범위 1~100 으로 잘라 맞춘다. */
     public WikiTopNodesResponse topNodes(long userId, int limit) {
-        return wikiClient.getTopNodes(userId, limit);
+        int safeLimit = Math.min(MAX_TOP_NODES, Math.max(MIN_TOP_NODES, limit));
+        return wikiClient.getTopNodes(userId, safeLimit);
     }
 }

@@ -140,6 +140,25 @@ public class User {
         return agentContextVersion;
     }
 
+    /** 관리자 활성화 — 비활성(soft delete) 표시를 지운다. */
+    public void activate() {
+        this.deletedAt = null;
+    }
+
+    /**
+     * 관리자 비활성화 — soft delete 시각을 찍어 비활성 처리한다. 이미 비활성이면 시각을 덮어쓰지 않는다.
+     * 효과: 관리자 목록 INACTIVE 표시 + 생성 스케줄러 대상(deletedAt IS NULL)에서 제외.
+     */
+    public void deactivate() {
+        if (this.deletedAt == null) {
+            this.deletedAt = OffsetDateTime.now();
+        }
+    }
+
+    public boolean isActive() {
+        return deletedAt == null;
+    }
+
     public OffsetDateTime getCreatedAt() {
         return createdAt;
     }
