@@ -1,8 +1,12 @@
 package com.bambi.service.admin;
 
 import com.bambi.service.admin.dto.AdminUserResponse;
+import com.bambi.service.admin.dto.AdminUserStatusRequest;
 import com.bambi.service.common.response.ApiResponse;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -27,5 +31,12 @@ public class AdminUserController {
     @GetMapping
     public ApiResponse<List<AdminUserResponse>> list() {
         return ApiResponse.ok(adminUserService.listUsers());
+    }
+
+    /** 사용자 활성/비활성 토글. body {@code {"active": true|false}}. */
+    @PatchMapping("/{userId}/status")
+    public ApiResponse<AdminUserResponse> setStatus(@PathVariable long userId,
+                                                    @RequestBody AdminUserStatusRequest request) {
+        return ApiResponse.ok(adminUserService.setActive(userId, request.active()));
     }
 }

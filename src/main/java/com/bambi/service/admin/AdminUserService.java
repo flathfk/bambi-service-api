@@ -1,6 +1,9 @@
 package com.bambi.service.admin;
 
 import com.bambi.service.admin.dto.AdminUserResponse;
+import com.bambi.service.common.error.ApiException;
+import com.bambi.service.common.error.ErrorCode;
+import com.bambi.service.user.User;
 import com.bambi.service.user.UserRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -33,5 +36,22 @@ public class AdminUserService {
         return userRepository.findAllByOrderByCreatedAtDesc().stream()
                 .map(AdminUserResponse::from)
                 .toList();
+    }
+
+    /**
+     * 사용자를 활성/비활성 전환한다(관리자 토글). 비활성은 soft delete 시각으로 표시하며,
+     * 같은 상태로의 재요청은 그대로 둔다(멱등). 없는 사용자면 NOT_FOUND.
+     */
+    @Transactional
+    public AdminUserResponse setActive(long userId, boolean active) {
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new ApiException(ErrorCode.NOT_FOUND,
+                        "사용자를 찾을 수 없습니다 (id=" + userId + ")"));
+        if (active) {
+            user.activate();
+        } else {
+            user.deactivate();
+        }
+        return AdminUserResponse.from(user);
     }
 }
