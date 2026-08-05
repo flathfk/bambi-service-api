@@ -11,9 +11,11 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
+import java.nio.charset.StandardCharsets;
 import java.time.OffsetDateTime;
 import java.time.ZoneId;
 import java.time.temporal.ChronoUnit;
+import java.util.UUID;
 
 /**
  * 사용자가 직접 "지금 생성"을 눌렀을 때, 스케줄러를 기다리지 않고 즉시 리포트 생성을 요청한다.
@@ -50,8 +52,12 @@ public class OnDemandGenerationService {
     }
 
     /**
-     * 요청한 사용자의 관심사 전체를 종합해 즉시 생성 Job 을 접수하고 job_id 를 반환한다.
+     * 요청한 사용자의 관심사 전체를 종합해 즉시 생성 Job 을 접수하고 트리거 응답을 반환한다.
      * 관심사가 없으면 VALIDATION_ERROR. 실제 종합은 agent 가 사용자 위키 컨텍스트로 수행한다(topic 은 표시용 라벨).
+     *
+     * <p>펜딩 키({@code id})는 service 가 발급한다 — agent 가 202 를 줘도 body 파싱 실패 시 agent 식별자는
+     * null 이 될 수 있어 키로 못 쓴다(우석 협의). id 는 멱등키에서 파생(deterministic)이라 같은 분 연타는
+     * 같은 id 로 모여, agent 뿐 아니라 펜딩 목록에서도 1건으로 합쳐진다(우석 펜딩 테이블 upsert 키).
      */
     public GenerationTriggerResponse generateForUser(long userId) {
         WikiTagsResponse interests = wikiClient.getTags(userId);
@@ -62,15 +68,22 @@ public class OnDemandGenerationService {
         }
         GenerationRequest request = new GenerationRequest(
                 onDemandKey(userId), topic, contentType, null, null);
-        String jobId = generationClient.requestGeneration(userId, request);
-        log.info("[OnDemandGeneration] 즉시 생성 요청 userId={}, interests={}, idempotencyKey={}, jobId={}",
-                userId, interests.tags().size(), request.idempotencyKey(), jobId);
-        return GenerationTriggerResponse.accepted(jobId);
+        String id = pendingId(request.idempotencyKey());
+        // agent 202 body 파싱 실패 시 null 일 수 있어 키로 쓰지 않는다 — 참고용으로만 내린다.
+        String agentJobId = generationClient.requestGeneration(userId, request);
+        log.info("[OnDemandGeneration] 즉시 생성 요청 userId={}, interests={}, idempotencyKey={}, id={}, agentJobId={}",
+                userId, interests.tags().size(), request.idempotencyKey(), id, agentJobId);
+        return GenerationTriggerResponse.accepted(id, agentJobId);
     }
 
     /** on-demand 멱등키(분 단위) — 연타는 1건, 시간 지나면 새 생성. */
     private String onDemandKey(long userId) {
         long minute = OffsetDateTime.now(KST).truncatedTo(ChronoUnit.MINUTES).toEpochSecond();
         return "ondemand-" + userId + "-" + contentType + "-" + minute;
+    }
+
+    /** 펜딩 키(id) — 멱등키에서 파생한 결정적 UUID. 같은 멱등키는 항상 같은 id → 펜딩 중복 방지. */
+    private static String pendingId(String idempotencyKey) {
+        return UUID.nameUUIDFromBytes(idempotencyKey.getBytes(StandardCharsets.UTF_8)).toString();
     }
 }
