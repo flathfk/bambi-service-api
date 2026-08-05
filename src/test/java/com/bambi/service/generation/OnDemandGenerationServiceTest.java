@@ -23,7 +23,8 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
- * {@link OnDemandGenerationService} — 관심사 종합 즉시 생성: 관심사 있으면 jobId 반환, 없으면 VALIDATION_ERROR.
+ * {@link OnDemandGenerationService} — 관심사 종합 즉시 생성: 관심사 있으면 id(항상)+agentJobId(참고) 반환,
+ * 없으면 VALIDATION_ERROR.
  */
 class OnDemandGenerationServiceTest {
 
@@ -40,19 +41,36 @@ class OnDemandGenerationServiceTest {
     }
 
     @Test
-    @DisplayName("관심사가 있으면 종합 생성을 접수하고 jobId 를 반환한다")
-    void triggersWithInterestsAndReturnsJobId() {
+    @DisplayName("관심사가 있으면 종합 생성을 접수하고 id(멱등키 파생)+agentJobId 를 반환한다")
+    void triggersWithInterestsAndReturnsIds() {
         when(wikiClient.getTags(28L)).thenReturn(tagsWith("SK하이닉스", "삼성전자"));
         when(generationClient.requestGeneration(eq(28L), any())).thenReturn("job-99");
 
         GenerationTriggerResponse response = service.generateForUser(28L);
 
         assertThat(response.status()).isEqualTo("accepted");
-        assertThat(response.jobId()).isEqualTo("job-99");
+        assertThat(response.agentJobId()).isEqualTo("job-99");   // agent 식별자(참고용)
         ArgumentCaptor<GenerationRequest> captor = ArgumentCaptor.forClass(GenerationRequest.class);
         verify(generationClient).requestGeneration(eq(28L), captor.capture());
         assertThat(captor.getValue().topic()).isEqualTo("내 관심사 종합 브리핑");
         assertThat(captor.getValue().idempotencyKey()).startsWith("ondemand-28-interest_news_card-");
+        // id 는 항상 보장되고 멱등키에서 결정적으로 파생된다(같은 분 연타 = 같은 id → 펜딩 중복 방지).
+        String expectedId = java.util.UUID.nameUUIDFromBytes(
+                captor.getValue().idempotencyKey().getBytes(java.nio.charset.StandardCharsets.UTF_8)).toString();
+        assertThat(response.id()).isEqualTo(expectedId);
+    }
+
+    @Test
+    @DisplayName("agent 식별자가 null(202 body 파싱 실패)이어도 id 는 보장되고 접수로 응답한다")
+    void agentJobIdNullStillReturnsId() {
+        when(wikiClient.getTags(28L)).thenReturn(tagsWith("SK하이닉스"));
+        when(generationClient.requestGeneration(eq(28L), any())).thenReturn(null);   // 접수는 성공, 식별자만 못 읽음
+
+        GenerationTriggerResponse response = service.generateForUser(28L);
+
+        assertThat(response.status()).isEqualTo("accepted");
+        assertThat(response.agentJobId()).isNull();     // 참고용 — null 가능
+        assertThat(response.id()).isNotBlank();         // 펜딩 키는 항상 보장
     }
 
     @Test
