@@ -52,6 +52,7 @@ class RestClientPublishSnapshotClientTest {
                     "title":"심화 브리핑","summary":"요약","body":"본문 전체",
                     "citations":[{"title":"출처","url":"https://ex.com"}],
                     "tags":["코스피"],
+                    "content_tags":["외국인 수급","반도체주"],
                     "created_at":"2026-07-30T01:00:00Z"}]}
                 """;
         server.expect(requestTo("http://agent.local/internal/v1/publish-snapshot-batches/claim"))
@@ -72,7 +73,9 @@ class RestClientPublishSnapshotClientTest {
         assertThat(resp.items().get(0).body()).isEqualTo("본문 전체");
         assertThat(resp.items().get(0).citations()).hasSize(1);
         assertThat(resp.items().get(0).citations().get(0).url()).isEqualTo("https://ex.com");
-        assertThat(resp.items().get(0).tags()).containsExactly("코스피");   // 발행 태그 파싱
+        assertThat(resp.items().get(0).tags()).containsExactly("코스피");   // topic 에코 파싱
+        assertThat(resp.items().get(0).contentTags()).containsExactly("외국인 수급", "반도체주");   // content_tags 파싱
+        assertThat(resp.items().get(0).interestTags()).containsExactly("외국인 수급", "반도체주");   // 노출용은 content_tags 우선
     }
 
     @Test

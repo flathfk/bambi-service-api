@@ -30,9 +30,10 @@ class PublishProcessingServiceTest {
             new PublishProcessingService(cardRepository, reportRepository);
 
     private static PublishItem item(String contentId, int version, String title, String summary) {
+        // content_tags 미도착(단계적 롤아웃 전) → tags(topic)로 폴백되는 경로
         return new PublishItem(contentId, "1", version, "hash-" + version, title, summary, "본문-" + version,
                 List.of(new PublishItem.Citation("src", "https://example.com")),
-                List.of("코스피"));
+                List.of("코스피"), null);
     }
 
     @Test
@@ -51,6 +52,23 @@ class PublishProcessingServiceTest {
         ArgumentCaptor<Card> cardCaptor = ArgumentCaptor.forClass(Card.class);
         verify(cardRepository).save(cardCaptor.capture());                   // 카드(요약)도 저장
         assertThat(cardCaptor.getValue().getInterestTags()).containsExactly("코스피");   // 발행 태그 저장
+    }
+
+    @Test
+    void content_tags가_오면_topic_대신_실제_태그를_저장한다() {
+        when(cardRepository.findByUserIdAndExternalContentId(1L, "c1")).thenReturn(Optional.empty());
+        when(reportRepository.findByUserIdAndExternalContentId(1L, "c1")).thenReturn(Optional.empty());
+        when(reportRepository.save(any(Report.class))).thenAnswer(inv -> inv.getArgument(0));
+        // tags=topic 에코, content_tags=리포트 내용 기반 실제 태그
+        PublishItem item = new PublishItem("c1", "1", 1, "hash-1", "제목", "요약", "본문",
+                List.of(), List.of("오늘의 관심사 뉴스"), List.of("군사 AI", "AI 규제"));
+
+        service.upsert(item);
+
+        ArgumentCaptor<Card> cardCaptor = ArgumentCaptor.forClass(Card.class);
+        verify(cardRepository).save(cardCaptor.capture());
+        assertThat(cardCaptor.getValue().getInterestTags())
+                .containsExactly("군사 AI", "AI 규제");   // topic 에코가 아니라 content_tags
     }
 
     @Test

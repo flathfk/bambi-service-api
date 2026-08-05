@@ -50,7 +50,8 @@ public class MockPublishSnapshotClient implements PublishSnapshotClient, MockPub
                 "저장한 콘텐츠를 바탕으로 agent 가 생성한 심화 브리핑입니다. (Mock 비동기 발행)",
                 "본문(Mock). 실제 LLM 연동(P1) 시 교체.",
                 List.of(new PublishItem.Citation(sourceTitle, sourceUrl)),
-                List.of("Mock 관심사"));   // 발행 태그(topic) — 실제 agent 는 generation_requests.topic
+                List.of("Mock 관심사"),          // tags(topic 에코) — 실제 agent 는 generation_requests.topic
+                List.of("Mock 콘텐츠태그"));      // content_tags — 리포트 내용 기반(카드 노출용)
         ready.add(item);
         log.info("[MockPublish] enqueue contentId={}, userId={}", contentId, userId);
     }
