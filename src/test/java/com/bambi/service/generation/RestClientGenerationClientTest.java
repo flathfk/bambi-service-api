@@ -12,7 +12,7 @@ import org.springframework.http.MediaType;
 import org.springframework.test.web.client.MockRestServiceServer;
 import org.springframework.web.client.RestClient;
 
-import static org.assertj.core.api.Assertions.assertThatCode;
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.jsonPath;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.method;
@@ -34,7 +34,8 @@ class RestClientGenerationClientTest {
     void setUp() {
         RestClient.Builder builder = RestClient.builder().baseUrl("http://agent.local");
         server = MockRestServiceServer.bindTo(builder).build();
-        client = new RestClientGenerationClient(builder.build(), "/internal/v1");
+        client = new RestClientGenerationClient(builder.build(), "/internal/v1",
+                new com.fasterxml.jackson.databind.ObjectMapper());
     }
 
     @Test
@@ -55,7 +56,9 @@ class RestClientGenerationClientTest {
         GenerationRequest request = new GenerationRequest(
                 "2026-08-04-23-interest_news_card", "오늘의 관심사 뉴스", "interest_news_card", null, null);
 
-        assertThatCode(() -> client.requestGeneration(23L, request)).doesNotThrowAnyException();
+        String jobId = client.requestGeneration(23L, request);
+
+        assertThat(jobId).isEqualTo("job-1");   // 202 body 의 job_id 반환
         server.verify();
     }
 

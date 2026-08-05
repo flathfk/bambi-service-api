@@ -10,6 +10,6 @@ import com.bambi.service.generation.dto.GenerationRequest;
  */
 public interface GenerationClient {
 
-    /** 사용자의 콘텐츠 생성 Job 을 요청한다. 202+job_id 성격(비동기). */
-    void requestGeneration(long userId, GenerationRequest request);
+    /** 사용자의 콘텐츠 생성 Job 을 요청한다(202 비동기). agent 가 준 job_id 를 반환한다(없으면 null). */
+    String requestGeneration(long userId, GenerationRequest request);
 }

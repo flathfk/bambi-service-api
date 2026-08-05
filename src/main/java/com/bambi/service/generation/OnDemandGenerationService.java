@@ -1,7 +1,11 @@
 package com.bambi.service.generation;
 
+import com.bambi.service.common.error.ApiException;
+import com.bambi.service.common.error.ErrorCode;
 import com.bambi.service.generation.dto.GenerationRequest;
 import com.bambi.service.generation.dto.GenerationTriggerResponse;
+import com.bambi.service.wiki.AgentWikiClient;
+import com.bambi.service.wiki.dto.WikiTagsResponse;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -15,8 +19,12 @@ import java.time.temporal.ChronoUnit;
  * 사용자가 직접 "지금 생성"을 눌렀을 때, 스케줄러를 기다리지 않고 즉시 리포트 생성을 요청한다.
  * 스케줄러와 같은 {@link GenerationClient} 경계를 재사용하며 대상은 요청한 본인 1명이다.
  *
- * <p>멱등키는 분 단위라 같은 분 내 연타(더블클릭)는 Job 1개로 합쳐지고, 시간이 지나면 새로 생성된다
- * (일일 1회인 스케줄러와 달리 on-demand 는 반복 허용).
+ * <p>온디맨드는 관심 자료 한 건이 아니라 <b>사용자 관심사 전체를 종합</b>하는 보고서다(제품 정의, 여진 확인).
+ * 그래서 프론트가 topic 을 고르지 않고, 서버가 agent 관심사(위키 태그)를 확인해 생성한다.
+ * 관심사가 하나도 없으면 종합할 게 없으므로 {@link ErrorCode#NO_INTEREST} 로 거절한다.
+ *
+ * <p>멱등키는 분 단위라 같은 분 내 연타(더블클릭)는 Job 1개로 합쳐진다. "이미 진행 중인 작업" 완전 차단
+ * (GENERATION_IN_PROGRESS)은 생성 작업 상태 영속화가 필요해 후속 과제다(여진 5번 — 펜딩 목록 API와 함께).
  */
 @Service
 public class OnDemandGenerationService {
@@ -25,36 +33,36 @@ public class OnDemandGenerationService {
     private static final ZoneId KST = ZoneId.of("Asia/Seoul");
 
     private final GenerationClient generationClient;
+    private final AgentWikiClient wikiClient;
     private final String topic;
     private final String contentType;
 
     public OnDemandGenerationService(
             GenerationClient generationClient,
-            @Value("${app.scheduler.generation.topic:오늘의 관심사 뉴스}") String topic,
+            AgentWikiClient wikiClient,
+            @Value("${app.generation.on-demand.topic:내 관심사 종합 브리핑}") String topic,
             @Value("${app.scheduler.generation.content-type:interest_news_card}") String contentType) {
         this.generationClient = generationClient;
+        this.wikiClient = wikiClient;
         this.topic = topic;
         this.contentType = contentType;
     }
 
     /**
-     * 요청한 사용자의 위키·관심사 기반으로 즉시 생성 Job 을 접수한다.
-     * requestedTopic 을 주면(프론트가 위키 상위 관심사를 골라 넘기는 경로) 그 주제로, 비우면 기본값으로 생성한다.
+     * 요청한 사용자의 관심사 전체를 종합해 즉시 생성 Job 을 접수하고 job_id 를 반환한다.
+     * 관심사가 없으면 NO_INTEREST. 실제 종합은 agent 가 사용자 위키 컨텍스트로 수행한다(topic 은 표시용 라벨).
      */
-    public GenerationTriggerResponse generateForUser(long userId, String requestedTopic) {
-        // TODO(송우 확정 대기): 백엔드가 직접 top 관심사를 뽑는 방식이면, 여기서 agent /interests 조회해 채운다.
-        String effectiveTopic = hasText(requestedTopic) ? requestedTopic.strip() : topic;
+    public GenerationTriggerResponse generateForUser(long userId) {
+        WikiTagsResponse interests = wikiClient.getTags(userId);
+        if (interests.tags() == null || interests.tags().isEmpty()) {
+            throw new ApiException(ErrorCode.NO_INTEREST);
+        }
         GenerationRequest request = new GenerationRequest(
-                onDemandKey(userId), effectiveTopic, contentType, null, null);
-        generationClient.requestGeneration(userId, request);
-        log.info("[OnDemandGeneration] 즉시 생성 요청 userId={}, topic={}, idempotencyKey={}",
-                userId, effectiveTopic, request.idempotencyKey());
-        // TODO(송우 답): 펜딩 UI 용 job_id 필요하면 GenerationClient 반환형을 확장해 여기 담는다.
-        return GenerationTriggerResponse.accepted(null);
-    }
-
-    private static boolean hasText(String s) {
-        return s != null && !s.isBlank();
+                onDemandKey(userId), topic, contentType, null, null);
+        String jobId = generationClient.requestGeneration(userId, request);
+        log.info("[OnDemandGeneration] 즉시 생성 요청 userId={}, interests={}, idempotencyKey={}, jobId={}",
+                userId, interests.tags().size(), request.idempotencyKey(), jobId);
+        return GenerationTriggerResponse.accepted(jobId);
     }
 
     /** on-demand 멱등키(분 단위) — 연타는 1건, 시간 지나면 새 생성. */

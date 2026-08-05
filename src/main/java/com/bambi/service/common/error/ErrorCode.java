@@ -13,6 +13,8 @@ public enum ErrorCode {
     AUTH_INVALID_TOKEN(HttpStatus.UNAUTHORIZED, "AUTH_INVALID_TOKEN", "인증 토큰이 유효하지 않습니다."),
     FORBIDDEN(HttpStatus.FORBIDDEN, "FORBIDDEN", "접근 권한이 없습니다."),
     NOT_FOUND(HttpStatus.NOT_FOUND, "NOT_FOUND", "리소스를 찾을 수 없습니다."),
+    // 즉시 리포트 생성인데 종합할 관심사가 아직 없음(위키/관심사 비어 있음).
+    NO_INTEREST(HttpStatus.BAD_REQUEST, "NO_INTEREST", "생성할 관심사가 아직 없습니다. 먼저 관심 자료를 저장해 주세요."),
     DUPLICATE_RESOURCE(HttpStatus.CONFLICT, "DUPLICATE_RESOURCE", "이미 존재하는 리소스입니다."),
     // agent-api 연동 실패 매핑 (AgentGateway 가 agent 5xx/타임아웃/연결오류를 이 코드로 변환)
     AGENT_UNAVAILABLE(HttpStatus.SERVICE_UNAVAILABLE, "AGENT_UNAVAILABLE", "AI 처리 서비스에 일시적으로 연결할 수 없습니다."),
