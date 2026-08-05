@@ -1,6 +1,9 @@
 package com.bambi.service.agent;
 
 import com.bambi.service.agent.dto.AgentContextRequest;
+import com.bambi.service.interest.Interest;
+import com.bambi.service.interest.InterestRepository;
+import com.bambi.service.interest.InterestSource;
 import com.bambi.service.user.User;
 import com.bambi.service.user.UserRepository;
 import org.junit.jupiter.api.Test;
@@ -23,9 +26,10 @@ import static org.mockito.Mockito.when;
 class AgentContextSyncServiceTest {
 
     private final UserRepository userRepository = mock(UserRepository.class);
+    private final InterestRepository interestRepository = mock(InterestRepository.class);
     private final AgentGateway agentGateway = mock(AgentGateway.class);
     private final AgentContextSyncService service =
-            new AgentContextSyncService(userRepository, agentGateway);
+            new AgentContextSyncService(userRepository, interestRepository, agentGateway);
 
     private static User newUser() {
         return new User("qa@bambi.test", "hash", "큐에이");
@@ -56,6 +60,27 @@ class AgentContextSyncServiceTest {
         ArgumentCaptor<AgentContextRequest> captor = ArgumentCaptor.forClass(AgentContextRequest.class);
         verify(agentGateway).syncUserContext(anyLong(), captor.capture());
         assertThat(captor.getValue().contextVersion()).isEqualTo(2);   // 1 → 2 (STALE 방지)
+    }
+
+    @Test
+    void 사용자_직접_설정_관심사를_signup_interests로_보낸다() {
+        User user = newUser();
+        when(userRepository.findById(1L)).thenReturn(Optional.of(user));
+        when(interestRepository.findByUserIdAndSourceAndDeletedAtIsNullOrderByNameAsc(
+                1L, InterestSource.USER))
+                .thenReturn(java.util.List.of(
+                        new Interest(1L, "미국 증시"),
+                        new Interest(1L, "반도체")));
+
+        service.syncUserContext(1L);
+
+        ArgumentCaptor<AgentContextRequest> captor = ArgumentCaptor.forClass(AgentContextRequest.class);
+        verify(agentGateway).syncUserContext(anyLong(), captor.capture());
+        assertThat(captor.getValue().signupInterests()).hasSize(1);
+        assertThat(captor.getValue().signupInterests().getFirst().category())
+                .isEqualTo("사용자 선택 관심사");
+        assertThat(captor.getValue().signupInterests().getFirst().topics())
+                .containsExactly("미국 증시", "반도체");
     }
 
     @Test

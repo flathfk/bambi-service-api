@@ -10,6 +10,8 @@ import org.springframework.http.MediaType;
 import org.springframework.test.web.client.MockRestServiceServer;
 import org.springframework.web.client.RestClient;
 
+import java.util.List;
+
 import static org.hamcrest.Matchers.empty;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
@@ -64,7 +66,7 @@ class AgentContextContractTest {
     }
 
     @Test
-    @DisplayName("본문 키는 계약대로 snake_case 6개 필드 — 최초 가입 기본값")
+    @DisplayName("본문 키는 계약대로 snake_case이며 최초 가입 관심사는 빈 배열이다")
     void body_snakeCaseFields() {
         server.expect(requestTo(CONTEXT_URL))
                 .andExpect(jsonPath("$.context_version").value(1))
@@ -73,9 +75,26 @@ class AgentContextContractTest {
                 .andExpect(jsonPath("$.personalization_enabled").value(true))
                 .andExpect(jsonPath("$.blocked_interest_ids").value(empty()))
                 .andExpect(jsonPath("$.blocked_source_ids").value(empty()))
+                .andExpect(jsonPath("$.signup_interests").value(empty()))
                 .andRespond(withSuccess("{\"context_version\":1}", MediaType.APPLICATION_JSON));
 
         gateway.syncUserContext(7, AgentContextRequest.forVersion(1));
+
+        server.verify();
+    }
+
+    @Test
+    @DisplayName("사용자 직접 설정 관심사는 signup_interests 그룹으로 직렬화한다")
+    void body_signupInterests() {
+        server.expect(requestTo(CONTEXT_URL))
+                .andExpect(jsonPath("$.signup_interests[0].category").value("사용자 선택 관심사"))
+                .andExpect(jsonPath("$.signup_interests[0].topics[0]").value("미국 증시"))
+                .andExpect(jsonPath("$.signup_interests[0].topics[1]").value("반도체"))
+                .andRespond(withSuccess("{\"context_version\":2}", MediaType.APPLICATION_JSON));
+
+        gateway.syncUserContext(
+                7,
+                AgentContextRequest.forVersion(2, List.of("미국 증시", "반도체")));
 
         server.verify();
     }
@@ -89,6 +108,7 @@ class AgentContextContractTest {
                 .andExpect(jsonPath("$.personalizationEnabled").doesNotExist())
                 .andExpect(jsonPath("$.blockedInterestIds").doesNotExist())
                 .andExpect(jsonPath("$.blockedSourceIds").doesNotExist())
+                .andExpect(jsonPath("$.signupInterests").doesNotExist())
                 .andRespond(withSuccess("{\"context_version\":1}", MediaType.APPLICATION_JSON));
 
         gateway.syncUserContext(7, AgentContextRequest.forVersion(1));
