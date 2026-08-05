@@ -1,7 +1,11 @@
 package com.bambi.service.wiki;
 
 import com.bambi.service.agent.AgentErrors;
+import com.bambi.service.common.error.ApiException;
+import com.bambi.service.common.error.ErrorCode;
+import com.bambi.service.wiki.dto.WikiDocumentDetailResponse;
 import com.bambi.service.wiki.dto.WikiDocumentsResponse;
+import com.bambi.service.wiki.dto.WikiGraphResponse;
 import com.bambi.service.wiki.dto.WikiTagsResponse;
 import com.bambi.service.wiki.dto.WikiTopNodesResponse;
 import org.springframework.beans.factory.annotation.Value;
@@ -15,7 +19,7 @@ import org.springframework.web.client.RestClientResponseException;
  *
  * <p>쓰기 경계인 {@link com.bambi.service.agent.AgentGateway} 와 달리 이건 읽기 전용이라 AI 로그를
  * 남기지 않는다(사용자 화면 조회는 처리 Job 이 아니라 단순 질의). agent 오류는 팀 공통 에러로 변환하되,
- * "아직 위키/관심이 없는 사용자"(404)는 오류가 아니라 빈 결과로 정규화한다.
+ * 아직 활성 관심 Profile이 없는 경우만 빈 결과로, 없는 문서 상세는 Service 표준 404로 변환한다.
  *
  * <p>user_id 는 agent 계약상 문자열이라 Spring 의 long userId 를 경로에 그대로 문자열로 붙인다.
  */
@@ -39,6 +43,31 @@ public class AgentWikiClient {
     /** 개인 Wiki 문서 목록(내부 schema 문서 포함 — 제외는 서비스가 한다). */
     public WikiDocumentsResponse getDocuments(long userId) {
         return get("/users/" + userId + "/wiki/documents", WikiDocumentsResponse.class);
+    }
+
+    /** 현재 Entity·Concept 전체 Graph를 조회한다. */
+    public WikiGraphResponse getGraph(long userId) {
+        return get("/users/" + userId + "/wiki/graph", WikiGraphResponse.class);
+    }
+
+    /** 문서 한 건의 Markdown·원본·관계 상세를 조회한다. */
+    public WikiDocumentDetailResponse getDocument(long userId, String documentId) {
+        try {
+            return restClient.get()
+                    .uri(uriBuilder -> uriBuilder
+                            .path(internalPrefix)
+                            .path("/users/{userId}/wiki/documents/{documentId}")
+                            .build(userId, documentId))
+                    .retrieve()
+                    .body(WikiDocumentDetailResponse.class);
+        } catch (RestClientResponseException e) {
+            if (e.getStatusCode().value() == 404) {
+                throw new ApiException(ErrorCode.NOT_FOUND, "LLM Wiki 문서를 찾을 수 없습니다.");
+            }
+            throw AgentErrors.unavailable(e, "agent 위키 문서 조회 실패");
+        } catch (RestClientException e) {
+            throw AgentErrors.connectFailed(e);
+        }
     }
 
     /** 연결 상위 위키 Node. limit 은 agent 계약상 1~100. */
