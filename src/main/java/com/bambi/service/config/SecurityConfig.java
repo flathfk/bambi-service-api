@@ -60,7 +60,7 @@ public class SecurityConfig {
                 .cors(cors -> cors.configurationSource(corsConfigurationSource()))
                 .sessionManagement(sm -> sm.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
-                        .requestMatchers("/api/health", "/api/version").permitAll()
+                        .requestMatchers("/api/health", "/api/version", "/api/interest-taxonomy").permitAll()
                         .requestMatchers("/api/auth/signup", "/api/auth/login").permitAll()
                         // 공개 피드·공개 프로필은 비로그인 열람 허용 (팀 정책: 홈=공개 SNS).
                         // GET 만 공개 — 팔로우/좋아요/공개설정 등 쓰기는 아래 authenticated 로 막힌다.

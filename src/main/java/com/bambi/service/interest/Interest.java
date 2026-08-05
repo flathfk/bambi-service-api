@@ -31,6 +31,15 @@ public class Interest {
     @Column(nullable = false, length = 100)
     private String name;
 
+    @Column(name = "taxonomy_version", length = 50)
+    private String taxonomyVersion;
+
+    @Column(name = "taxonomy_category_id", length = 50)
+    private String taxonomyCategoryId;
+
+    @Column(name = "taxonomy_topic_id", length = 50)
+    private String taxonomyTopicId;
+
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 20)
     private InterestSource source;
@@ -52,8 +61,37 @@ public class Interest {
         this.source = InterestSource.USER;
     }
 
+    /** Service taxonomy에서 고른 정식 토픽 관심사를 만든다. */
+    public static Interest fromTaxonomy(
+            Long userId,
+            String name,
+            String taxonomyVersion,
+            String categoryId,
+            String topicId) {
+        Interest interest = new Interest(userId, name);
+        interest.taxonomyVersion = taxonomyVersion;
+        interest.taxonomyCategoryId = categoryId;
+        interest.taxonomyTopicId = topicId;
+        return interest;
+    }
+
     public void rename(String name) {
         this.name = name;
+        this.taxonomyVersion = null;
+        this.taxonomyCategoryId = null;
+        this.taxonomyTopicId = null;
+    }
+
+    /** 선택을 정식 taxonomy 토픽으로 교체한다. */
+    public void selectTaxonomyTopic(
+            String name,
+            String taxonomyVersion,
+            String categoryId,
+            String topicId) {
+        this.name = name;
+        this.taxonomyVersion = taxonomyVersion;
+        this.taxonomyCategoryId = categoryId;
+        this.taxonomyTopicId = topicId;
     }
 
     public void softDelete() {
@@ -74,6 +112,18 @@ public class Interest {
 
     public InterestSource getSource() {
         return source;
+    }
+
+    public String getTaxonomyVersion() {
+        return taxonomyVersion;
+    }
+
+    public String getTaxonomyCategoryId() {
+        return taxonomyCategoryId;
+    }
+
+    public String getTaxonomyTopicId() {
+        return taxonomyTopicId;
     }
 
     public OffsetDateTime getCreatedAt() {
