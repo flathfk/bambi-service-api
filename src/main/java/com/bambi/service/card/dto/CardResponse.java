@@ -24,6 +24,7 @@ public record CardResponse(
         String title,
         String summary,
         String whyForYou,
+        List<String> tags,
         String visibility,
         AuthorResponse author,
         Long likeCount,
@@ -58,6 +59,7 @@ public record CardResponse(
                 card.getTitle(),
                 card.getSummary(),
                 card.getWhyForYou(),
+                tagsOf(card),
                 card.getVisibility(),
                 null,
                 null,
@@ -75,6 +77,7 @@ public record CardResponse(
                 card.getTitle(),
                 card.getSummary(),
                 card.getWhyForYou(),
+                tagsOf(card),
                 card.getVisibility(),
                 AuthorResponse.from(author),
                 likeCount,
@@ -87,5 +90,10 @@ public record CardResponse(
         return card.getSources().stream()
                 .map(s -> new SourceResponse(s.getTitle(), s.getUrl()))
                 .toList();
+    }
+
+    /** 카드 관심사 태그(agent 발행 topic). 리포트/발행 없는 즉시 카드는 빈 목록. */
+    private static List<String> tagsOf(Card card) {
+        return List.copyOf(card.getInterestTags());
     }
 }
