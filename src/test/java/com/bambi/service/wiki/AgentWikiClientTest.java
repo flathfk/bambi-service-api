@@ -1,6 +1,10 @@
 package com.bambi.service.wiki;
 
+import com.bambi.service.common.error.ApiException;
+import com.bambi.service.common.error.ErrorCode;
+import com.bambi.service.wiki.dto.WikiDocumentDetailResponse;
 import com.bambi.service.wiki.dto.WikiDocumentsResponse;
+import com.bambi.service.wiki.dto.WikiGraphResponse;
 import com.bambi.service.wiki.dto.WikiTagsResponse;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -12,6 +16,7 @@ import org.springframework.test.web.client.MockRestServiceServer;
 import org.springframework.web.client.RestClient;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.method;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.requestTo;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withStatus;
@@ -88,5 +93,61 @@ class AgentWikiClientTest {
         assertThat(resp.items()).hasSize(2);
         assertThat(resp.items().get(0).documentId()).isEqualTo("c1");
         assertThat(resp.items().get(0).documentKind()).isEqualTo("concept");
+    }
+
+    @Test
+    @DisplayName("Graph 조회: 사용자 식별 정보와 Markdown은 버리고 Node·Edge 계약을 camelCase로 매핑한다")
+    void getGraphReadsVisualizationContract() {
+        String agentBody = """
+                {"user_id":"7","namespace_key":"user/7","wiki_version":3,"generated_at":"2026-07-22T03:15:18Z",
+                 "stats":{"node_count":2,"edge_count":1,"entity_count":1,"concept_count":1,"orphan_count":0},
+                 "nodes":[{"id":"n1","document_kind":"entity","document_key":"obsidian","title":"Obsidian",
+                   "subtype":"product","summary":"지식 관리 도구","aliases":["옵시디언"],"file_path":"entities/obsidian.md",
+                   "version":2,"updated_at":"2026-07-22T03:15:18Z","markdown":"내부 본문","degree":1}],
+                 "edges":[{"id":"e1","source":"n1","target":"n2","relation_type":"applies_concept","metadata":{}}]}
+                """;
+        server.expect(requestTo("http://agent.local/internal/v1/users/7/wiki/graph"))
+                .andRespond(withSuccess(agentBody, MediaType.APPLICATION_JSON));
+
+        WikiGraphResponse resp = client.getGraph(7);
+
+        assertThat(resp.wikiVersion()).isEqualTo(3);
+        assertThat(resp.stats().nodeCount()).isEqualTo(2);
+        assertThat(resp.nodes().get(0).documentKind()).isEqualTo("entity");
+        assertThat(resp.nodes().get(0).filePath()).isEqualTo("entities/obsidian.md");
+        assertThat(resp.edges().get(0).relationType()).isEqualTo("applies_concept");
+    }
+
+    @Test
+    @DisplayName("문서 상세 조회: 원본 URL과 관련 Node를 보존한다")
+    void getDocumentReadsSourcesAndRelations() {
+        String agentBody = """
+                {"document_id":"n1","document_version_id":"v2","document_kind":"entity","document_key":"obsidian",
+                 "file_path":"entities/obsidian.md","domain":"product","title":"Obsidian","summary":"지식 관리 도구",
+                 "version":2,"source_count":1,"updated_at":"2026-07-22T03:15:18Z","markdown":"## 설명",
+                 "sources":[{"source_document_id":"s1","source_document_version_id":"sv1","source_type":"url",
+                   "source_version":1,"title":"공식 문서","canonical_url":"https://obsidian.md","relation_type":"derived_from"}],
+                 "relations":[{"direction":"outgoing","related_document_id":"n2","related_document_kind":"concept",
+                   "related_document_key":"linked-notes","related_title":"연결 노트","relation_type":"applies_concept","metadata":{}}]}
+                """;
+        server.expect(requestTo("http://agent.local/internal/v1/users/7/wiki/documents/n1"))
+                .andRespond(withSuccess(agentBody, MediaType.APPLICATION_JSON));
+
+        WikiDocumentDetailResponse resp = client.getDocument(7, "n1");
+
+        assertThat(resp.documentVersionId()).isEqualTo("v2");
+        assertThat(resp.sources().get(0).canonicalUrl()).isEqualTo("https://obsidian.md");
+        assertThat(resp.relations().get(0).relatedDocumentId()).isEqualTo("n2");
+    }
+
+    @Test
+    @DisplayName("문서 상세 조회: Agent 404는 사용자용 NOT_FOUND로 변환한다")
+    void getDocumentMapsNotFound() {
+        server.expect(requestTo("http://agent.local/internal/v1/users/7/wiki/documents/missing"))
+                .andRespond(withStatus(HttpStatus.NOT_FOUND));
+
+        assertThatThrownBy(() -> client.getDocument(7, "missing"))
+                .isInstanceOfSatisfying(ApiException.class,
+                        exception -> assertThat(exception.getErrorCode()).isEqualTo(ErrorCode.NOT_FOUND));
     }
 }

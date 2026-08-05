@@ -1,5 +1,6 @@
 package com.bambi.service.wiki;
 
+import com.bambi.service.wiki.dto.WikiDocumentDetailResponse;
 import com.bambi.service.wiki.dto.WikiTopNodesResponse;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -53,5 +54,17 @@ class WikiRelayServiceTest {
         service.topNodes(1L, 500);
 
         verify(wikiClient).getTopNodes(1L, 100);
+    }
+
+    @Test
+    @DisplayName("문서 상세: 인증 주체 ID와 문서 ID를 Agent 조회에 그대로 사용한다")
+    void documentUsesAuthenticatedUserScope() {
+        WikiDocumentDetailResponse detail = new WikiDocumentDetailResponse(
+                "node-1", "version-1", "entity", "node", "entities/node.md", "other",
+                "Node", "요약", 1, 0, "2026-07-22T03:15:18Z", "## Node", List.of(), List.of());
+        when(wikiClient.getDocument(9L, "node-1")).thenReturn(detail);
+
+        assertThat(service.document(9L, "node-1")).isSameAs(detail);
+        verify(wikiClient).getDocument(9L, "node-1");
     }
 }
