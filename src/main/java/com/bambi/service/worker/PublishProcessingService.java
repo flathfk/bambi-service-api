@@ -63,7 +63,7 @@ public class PublishProcessingService {
         }
         addSources(card, item);
         card.linkReport(report.getId());
-        card.replaceInterestTags(item.tags());   // 발행 태그(topic) 통째 교체 — 재수신 시 최신으로, 없으면 비움
+        card.replaceInterestTags(item.interestTags());   // content_tags 우선(없으면 topic 폴백) 통째 교체
 
         if (isNew) {
             try {
