@@ -3,6 +3,7 @@ package com.bambi.service.worker;
 import com.bambi.service.agent.publish.dto.PublishItem;
 import com.bambi.service.card.Card;
 import com.bambi.service.card.CardRepository;
+import com.bambi.service.notification.NotificationService;
 import com.bambi.service.report.Report;
 import com.bambi.service.report.ReportRepository;
 import org.slf4j.Logger;
@@ -30,10 +31,15 @@ public class PublishProcessingService {
 
     private final CardRepository cardRepository;
     private final ReportRepository reportRepository;
+    private final NotificationService notificationService;
 
-    public PublishProcessingService(CardRepository cardRepository, ReportRepository reportRepository) {
+    public PublishProcessingService(
+            CardRepository cardRepository,
+            ReportRepository reportRepository,
+            NotificationService notificationService) {
         this.cardRepository = cardRepository;
         this.reportRepository = reportRepository;
+        this.notificationService = notificationService;
     }
 
     /**
@@ -73,6 +79,13 @@ public class PublishProcessingService {
                 log.info("[PublishWorker] 유니크 충돌 → 멱등 처리 contentId={}", item.contentId());
                 return true;
             }
+            notificationService.notifyReportReady(
+                    userId,
+                    item.contentId(),
+                    item.version(),
+                    item.title(),
+                    item.summary(),
+                    report.getPublicId());
         }
         log.info("[PublishWorker] 리포트+카드 {} contentId={} (v{}), reportId={}",
                 isNew ? "발행" : "갱신", item.contentId(), item.version(), report.getId());
