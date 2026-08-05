@@ -56,14 +56,14 @@ class OnDemandGenerationServiceTest {
     }
 
     @Test
-    @DisplayName("관심사가 없으면 NO_INTEREST 로 막고 생성하지 않는다")
+    @DisplayName("관심사가 없으면 VALIDATION_ERROR 로 막고 생성하지 않는다")
     void noInterestRejects() {
         when(wikiClient.getTags(28L)).thenReturn(WikiTagsResponse.empty());
 
         assertThatThrownBy(() -> service.generateForUser(28L))
                 .isInstanceOf(ApiException.class)
                 .extracting(e -> ((ApiException) e).getErrorCode())
-                .isEqualTo(ErrorCode.NO_INTEREST);
+                .isEqualTo(ErrorCode.VALIDATION_ERROR);
 
         verify(generationClient, never()).requestGeneration(any(Long.class), any());
     }

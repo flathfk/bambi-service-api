@@ -55,7 +55,9 @@ public class OnDemandGenerationService {
     public GenerationTriggerResponse generateForUser(long userId) {
         WikiTagsResponse interests = wikiClient.getTags(userId);
         if (interests.tags() == null || interests.tags().isEmpty()) {
-            throw new ApiException(ErrorCode.NO_INTEREST);
+            // 관심사 0개면 종합할 게 없다. 프론트는 버튼 비활성화가 1차 가드이고, 서버는 표준 코드로 방어한다
+            // (프론트 constants/errors.ts 가 알려진 코드만 매핑 → VALIDATION_ERROR 로 통일, message 는 미노출).
+            throw new ApiException(ErrorCode.VALIDATION_ERROR, "생성할 관심사가 없습니다.");
         }
         GenerationRequest request = new GenerationRequest(
                 onDemandKey(userId), topic, contentType, null, null);
