@@ -1,5 +1,6 @@
 package com.bambi.service.interest;
 
+import com.bambi.service.agent.AgentContextSyncService;
 import com.bambi.service.auth.AuthPrincipal;
 import com.bambi.service.common.response.ApiResponse;
 import com.bambi.service.interest.dto.InterestRequest;
@@ -27,9 +28,13 @@ import java.util.List;
 public class InterestController {
 
     private final InterestService interestService;
+    private final AgentContextSyncService contextSyncService;
 
-    public InterestController(InterestService interestService) {
+    public InterestController(
+            InterestService interestService,
+            AgentContextSyncService contextSyncService) {
         this.interestService = interestService;
+        this.contextSyncService = contextSyncService;
     }
 
     @PostMapping
@@ -42,6 +47,13 @@ public class InterestController {
     @GetMapping
     public ApiResponse<List<InterestResponse>> list(@AuthenticationPrincipal AuthPrincipal principal) {
         return ApiResponse.ok(interestService.list(principal.id()));
+    }
+
+    /** 온보딩 관심사 저장이 끝난 뒤 확정된 USER 관심사를 Agent 컨텍스트에 한 번 동기화한다. */
+    @PostMapping("/sync")
+    public ApiResponse<Void> sync(@AuthenticationPrincipal AuthPrincipal principal) {
+        contextSyncService.syncUserContext(principal.id());
+        return ApiResponse.ok();
     }
 
     @PutMapping("/{id}")

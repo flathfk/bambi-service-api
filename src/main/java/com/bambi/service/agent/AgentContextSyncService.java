@@ -1,6 +1,8 @@
 package com.bambi.service.agent;
 
 import com.bambi.service.agent.dto.AgentContextRequest;
+import com.bambi.service.interest.InterestRepository;
+import com.bambi.service.interest.InterestSource;
 import com.bambi.service.user.User;
 import com.bambi.service.user.UserRepository;
 import org.springframework.stereotype.Service;
@@ -17,10 +19,15 @@ import org.springframework.stereotype.Service;
 public class AgentContextSyncService {
 
     private final UserRepository userRepository;
+    private final InterestRepository interestRepository;
     private final AgentGateway agentGateway;
 
-    public AgentContextSyncService(UserRepository userRepository, AgentGateway agentGateway) {
+    public AgentContextSyncService(
+            UserRepository userRepository,
+            InterestRepository interestRepository,
+            AgentGateway agentGateway) {
         this.userRepository = userRepository;
+        this.interestRepository = interestRepository;
         this.agentGateway = agentGateway;
     }
 
@@ -30,8 +37,15 @@ public class AgentContextSyncService {
      * 다음 재시도가 더 큰 버전으로 반영한다.
      */
     public void syncUserContext(long userId) {
+        var signupInterestNames = interestRepository
+                .findByUserIdAndSourceAndDeletedAtIsNullOrderByNameAsc(userId, InterestSource.USER)
+                .stream()
+                .map(interest -> interest.getName())
+                .toList();
         int version = allocateNextVersion(userId);
-        agentGateway.syncUserContext(userId, AgentContextRequest.forVersion(version));
+        agentGateway.syncUserContext(
+                userId,
+                AgentContextRequest.forVersion(version, signupInterestNames));
     }
 
     /**
