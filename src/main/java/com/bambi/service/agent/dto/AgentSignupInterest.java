@@ -7,8 +7,8 @@ import java.util.List;
 /**
  * agent-api {@code signup_interests} 항목.
  *
- * <p>현재 service DB에는 온보딩 Category가 없으므로, 사용자 직접 설정 관심사 이름들을
- * 하나의 임시 Category 아래 Topic 목록으로 전달한다.
+ * <p>taxonomy 토픽은 정식 Category 이름을 전달하고, 사용자가 직접 입력한 토픽 묶음은
+ * Category가 없으므로 {@code null}을 전달한다.
  */
 public record AgentSignupInterest(
         @JsonProperty("category") String category,

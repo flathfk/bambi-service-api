@@ -1,11 +1,20 @@
 package com.bambi.service.agent;
 
 import com.bambi.service.agent.dto.AgentContextRequest;
+import com.bambi.service.agent.dto.AgentInterestTaxonomyRequest;
+import com.bambi.service.agent.dto.AgentSignupInterest;
+import com.bambi.service.interest.Interest;
 import com.bambi.service.interest.InterestRepository;
 import com.bambi.service.interest.InterestSource;
-import com.bambi.service.user.User;
-import com.bambi.service.user.UserRepository;
+import com.bambi.service.interest.taxonomy.InterestTaxonomyService;
+import com.bambi.service.interest.taxonomy.dto.InterestTaxonomyResponse;
 import org.springframework.stereotype.Service;
+
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Map;
 
 /**
  * 사용자 컨텍스트를 agent 에 반영한다(계약 §4).
@@ -18,16 +27,19 @@ import org.springframework.stereotype.Service;
 @Service
 public class AgentContextSyncService {
 
-    private final UserRepository userRepository;
     private final InterestRepository interestRepository;
+    private final InterestTaxonomyService taxonomyService;
+    private final AgentContextVersionAllocator versionAllocator;
     private final AgentGateway agentGateway;
 
     public AgentContextSyncService(
-            UserRepository userRepository,
             InterestRepository interestRepository,
+            InterestTaxonomyService taxonomyService,
+            AgentContextVersionAllocator versionAllocator,
             AgentGateway agentGateway) {
-        this.userRepository = userRepository;
         this.interestRepository = interestRepository;
+        this.taxonomyService = taxonomyService;
+        this.versionAllocator = versionAllocator;
         this.agentGateway = agentGateway;
     }
 
@@ -37,27 +49,68 @@ public class AgentContextSyncService {
      * 다음 재시도가 더 큰 버전으로 반영한다.
      */
     public void syncUserContext(long userId) {
-        var signupInterestNames = interestRepository
-                .findByUserIdAndSourceAndDeletedAtIsNullOrderByNameAsc(userId, InterestSource.USER)
-                .stream()
-                .map(interest -> interest.getName())
-                .toList();
-        int version = allocateNextVersion(userId);
+        InterestTaxonomyResponse taxonomy = taxonomyService.getActiveTaxonomy();
+        agentGateway.syncInterestTaxonomy(AgentInterestTaxonomyRequest.from(taxonomy));
+        List<Interest> interests = interestRepository
+                .findByUserIdAndSourceAndDeletedAtIsNullOrderByNameAsc(userId, InterestSource.USER);
+        ContextInterests contextInterests = buildContextInterests(taxonomy, interests);
+        int version = versionAllocator.allocate(userId);
         agentGateway.syncUserContext(
                 userId,
-                AgentContextRequest.forVersion(version, signupInterestNames));
+                AgentContextRequest.forVersion(
+                        version,
+                        contextInterests.taxonomyVersion(),
+                        contextInterests.categoryIds(),
+                        contextInterests.topicIds(),
+                        contextInterests.signupInterests()));
     }
 
-    /**
-     * 사용자의 컨텍스트 버전을 +1 하고 새 값을 반환한다.
-     * {@code save()} 가 자체 트랜잭션으로 영속하므로 HTTP 호출을 트랜잭션 안에 붙잡지 않는다.
-     * 동시 호출은 드물고, 겹쳐서 같은 버전이 나가도 STALE 은 "이미 최신"으로 삼켜지므로 안전하다.
-     */
-    private int allocateNextVersion(long userId) {
-        User user = userRepository.findById(userId)
-                .orElseThrow(() -> new IllegalStateException("컨텍스트 동기화 대상 사용자 없음: " + userId));
-        int next = user.bumpAgentContextVersion();
-        userRepository.save(user);
-        return next;
+    /** taxonomy 선택을 Category 묶음으로, 직접 입력 토픽을 Category 없는 묶음으로 만든다. */
+    private ContextInterests buildContextInterests(
+            InterestTaxonomyResponse taxonomy,
+            List<Interest> interests) {
+        Map<String, String> categoryNames = taxonomy.categories().stream()
+                .collect(java.util.stream.Collectors.toMap(
+                        InterestTaxonomyResponse.Category::id,
+                        InterestTaxonomyResponse.Category::name));
+        Map<String, List<String>> grouped = new LinkedHashMap<>();
+        LinkedHashSet<String> categoryIds = new LinkedHashSet<>();
+        List<String> topicIds = new ArrayList<>();
+        List<String> customTopics = new ArrayList<>();
+
+        for (Interest interest : interests) {
+            boolean activeTaxonomyTopic = taxonomy.version().equals(interest.getTaxonomyVersion())
+                    && interest.getTaxonomyCategoryId() != null
+                    && interest.getTaxonomyTopicId() != null
+                    && categoryNames.containsKey(interest.getTaxonomyCategoryId());
+            if (!activeTaxonomyTopic) {
+                customTopics.add(interest.getName());
+                continue;
+            }
+            categoryIds.add(interest.getTaxonomyCategoryId());
+            topicIds.add(interest.getTaxonomyTopicId());
+            grouped.computeIfAbsent(interest.getTaxonomyCategoryId(), ignored -> new ArrayList<>())
+                    .add(interest.getName());
+        }
+
+        List<AgentSignupInterest> signupInterests = new ArrayList<>();
+        grouped.forEach((categoryId, topics) -> signupInterests.add(
+                new AgentSignupInterest(categoryNames.get(categoryId), topics)));
+        if (!customTopics.isEmpty()) {
+            signupInterests.add(new AgentSignupInterest(null, customTopics));
+        }
+        return new ContextInterests(
+                topicIds.isEmpty() ? null : taxonomy.version(),
+                List.copyOf(categoryIds),
+                List.copyOf(topicIds),
+                List.copyOf(signupInterests));
+    }
+
+    /** Agent Context 요청에 들어갈 관심사 선택 묶음. */
+    private record ContextInterests(
+            String taxonomyVersion,
+            List<String> categoryIds,
+            List<String> topicIds,
+            List<AgentSignupInterest> signupInterests) {
     }
 }
