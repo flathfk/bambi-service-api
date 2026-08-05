@@ -23,7 +23,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
- * {@link OnDemandGenerationService} — 관심사 종합 즉시 생성: 관심사 있으면 jobId 반환, 없으면 NO_INTEREST.
+ * {@link OnDemandGenerationService} — 관심사 종합 즉시 생성: 관심사 있으면 jobId 반환, 없으면 VALIDATION_ERROR.
  */
 class OnDemandGenerationServiceTest {
 
