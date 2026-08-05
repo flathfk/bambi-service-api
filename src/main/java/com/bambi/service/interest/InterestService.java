@@ -4,6 +4,7 @@ import com.bambi.service.common.error.ApiException;
 import com.bambi.service.common.error.ErrorCode;
 import com.bambi.service.interest.dto.InterestRequest;
 import com.bambi.service.interest.dto.InterestResponse;
+import com.bambi.service.interest.taxonomy.InterestTaxonomyService;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -18,18 +19,30 @@ import java.util.List;
 public class InterestService {
 
     private final InterestRepository interestRepository;
+    private final InterestTaxonomyService taxonomyService;
 
-    public InterestService(InterestRepository interestRepository) {
+    public InterestService(
+            InterestRepository interestRepository,
+            InterestTaxonomyService taxonomyService) {
         this.interestRepository = interestRepository;
+        this.taxonomyService = taxonomyService;
     }
 
     @Transactional
     public InterestResponse create(Long userId, InterestRequest req) {
-        String name = req.name().strip();
+        var selection = resolveSelection(req);
+        String name = selection.name();
         if (interestRepository.existsByUserIdAndNameAndDeletedAtIsNull(userId, name)) {
             throw new ApiException(ErrorCode.DUPLICATE_RESOURCE, "이미 등록한 관심사입니다.");
         }
-        Interest interest = new Interest(userId, name);
+        Interest interest = selection.taxonomy() == null
+                ? new Interest(userId, name)
+                : Interest.fromTaxonomy(
+                        userId,
+                        name,
+                        selection.taxonomy().taxonomyVersion(),
+                        selection.taxonomy().categoryId(),
+                        selection.taxonomy().topicId());
         interestRepository.save(interest);
         return InterestResponse.from(interest);
     }
@@ -43,14 +56,23 @@ public class InterestService {
 
     @Transactional
     public InterestResponse rename(Long userId, Long interestId, InterestRequest req) {
-        String name = req.name().strip();
+        var selection = resolveSelection(req);
+        String name = selection.name();
         Interest interest = findOwned(userId, interestId);
         // 이름이 실제로 바뀔 때만 중복 검사 (자기 자신과의 충돌 제외)
         if (!interest.getName().equals(name)
                 && interestRepository.existsByUserIdAndNameAndDeletedAtIsNull(userId, name)) {
             throw new ApiException(ErrorCode.DUPLICATE_RESOURCE, "이미 등록한 관심사입니다.");
         }
-        interest.rename(name);   // dirty checking 으로 flush
+        if (selection.taxonomy() == null) {
+            interest.rename(name);
+        } else {
+            interest.selectTaxonomyTopic(
+                    name,
+                    selection.taxonomy().taxonomyVersion(),
+                    selection.taxonomy().categoryId(),
+                    selection.taxonomy().topicId());
+        }
         return InterestResponse.from(interest);
     }
 
@@ -64,5 +86,20 @@ public class InterestService {
     private Interest findOwned(Long userId, Long interestId) {
         return interestRepository.findByIdAndUserIdAndDeletedAtIsNull(interestId, userId)
                 .orElseThrow(() -> new ApiException(ErrorCode.NOT_FOUND, "관심사를 찾을 수 없습니다."));
+    }
+
+    /** 요청을 canonical taxonomy 토픽 또는 직접 입력 문자열로 정규화한다. */
+    private ResolvedSelection resolveSelection(InterestRequest request) {
+        if (!request.isTaxonomySelection()) {
+            return new ResolvedSelection(request.name().strip(), null);
+        }
+        var topic = taxonomyService.resolveActiveTopic(request.taxonomyVersion(), request.topicId());
+        return new ResolvedSelection(topic.topicName(), topic);
+    }
+
+    /** 관심사 저장에 필요한 정규화 결과. */
+    private record ResolvedSelection(
+            String name,
+            InterestTaxonomyService.ResolvedTopic taxonomy) {
     }
 }

@@ -73,6 +73,9 @@ class AgentContextContractTest {
                 .andExpect(jsonPath("$.plan").value("free"))
                 .andExpect(jsonPath("$.preferred_language").value("ko"))
                 .andExpect(jsonPath("$.personalization_enabled").value(true))
+                .andExpect(jsonPath("$.interest_taxonomy_version").value(org.hamcrest.Matchers.nullValue()))
+                .andExpect(jsonPath("$.selected_category_ids").value(empty()))
+                .andExpect(jsonPath("$.selected_topic_ids").value(empty()))
                 .andExpect(jsonPath("$.blocked_interest_ids").value(empty()))
                 .andExpect(jsonPath("$.blocked_source_ids").value(empty()))
                 .andExpect(jsonPath("$.signup_interests").value(empty()))
@@ -84,10 +87,10 @@ class AgentContextContractTest {
     }
 
     @Test
-    @DisplayName("사용자 직접 설정 관심사는 signup_interests 그룹으로 직렬화한다")
+    @DisplayName("사용자 직접 설정 관심사는 Category 없는 signup_interests 그룹으로 직렬화한다")
     void body_signupInterests() {
         server.expect(requestTo(CONTEXT_URL))
-                .andExpect(jsonPath("$.signup_interests[0].category").value("사용자 선택 관심사"))
+                .andExpect(jsonPath("$.signup_interests[0].category").value(org.hamcrest.Matchers.nullValue()))
                 .andExpect(jsonPath("$.signup_interests[0].topics[0]").value("미국 증시"))
                 .andExpect(jsonPath("$.signup_interests[0].topics[1]").value("반도체"))
                 .andRespond(withSuccess("{\"context_version\":2}", MediaType.APPLICATION_JSON));
@@ -100,12 +103,39 @@ class AgentContextContractTest {
     }
 
     @Test
+    @DisplayName("taxonomy 버전과 선택 ID를 signup_interests 라벨과 함께 직렬화한다")
+    void body_taxonomySelections() {
+        server.expect(requestTo(CONTEXT_URL))
+                .andExpect(jsonPath("$.interest_taxonomy_version").value("1.0.0-draft"))
+                .andExpect(jsonPath("$.selected_category_ids[0]").value("tech"))
+                .andExpect(jsonPath("$.selected_topic_ids[0]").value("ai_ml"))
+                .andExpect(jsonPath("$.signup_interests[0].category").value("테크·IT"))
+                .andExpect(jsonPath("$.signup_interests[0].topics[0]").value("AI·머신러닝"))
+                .andRespond(withSuccess("{\"context_version\":2}", MediaType.APPLICATION_JSON));
+
+        gateway.syncUserContext(
+                7,
+                AgentContextRequest.forVersion(
+                        2,
+                        "1.0.0-draft",
+                        List.of("tech"),
+                        List.of("ai_ml"),
+                        List.of(new com.bambi.service.agent.dto.AgentSignupInterest(
+                                "테크·IT", List.of("AI·머신러닝")))));
+
+        server.verify();
+    }
+
+    @Test
     @DisplayName("camelCase 키가 새어나가면 안 된다 (@JsonProperty 제거 회귀 방지)")
     void body_noCamelCaseLeak() {
         server.expect(requestTo(CONTEXT_URL))
                 .andExpect(jsonPath("$.contextVersion").doesNotExist())
                 .andExpect(jsonPath("$.preferredLanguage").doesNotExist())
                 .andExpect(jsonPath("$.personalizationEnabled").doesNotExist())
+                .andExpect(jsonPath("$.interestTaxonomyVersion").doesNotExist())
+                .andExpect(jsonPath("$.selectedCategoryIds").doesNotExist())
+                .andExpect(jsonPath("$.selectedTopicIds").doesNotExist())
                 .andExpect(jsonPath("$.blockedInterestIds").doesNotExist())
                 .andExpect(jsonPath("$.blockedSourceIds").doesNotExist())
                 .andExpect(jsonPath("$.signupInterests").doesNotExist())

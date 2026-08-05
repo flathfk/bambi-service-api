@@ -2,6 +2,7 @@ package com.bambi.service.agent;
 
 import com.bambi.service.agent.dto.AgentClippingRequest;
 import com.bambi.service.agent.dto.AgentContextRequest;
+import com.bambi.service.agent.dto.AgentInterestTaxonomyRequest;
 import com.bambi.service.agent.dto.AgentUrlSourceRequest;
 
 /**
@@ -21,6 +22,9 @@ public interface AgentGateway {
      * @throws com.bambi.service.common.error.ApiException agent 연결 실패/5xx 시 AGENT_UNAVAILABLE
      */
     void syncUserContext(long userId, AgentContextRequest request);
+
+    /** Service가 소유한 활성 관심사 taxonomy를 Agent DB에 버전 Snapshot으로 동기화한다. */
+    void syncInterestTaxonomy(AgentInterestTaxonomyRequest request);
 
     /**
      * 웹 클리핑을 agent 의 개인 Wiki 처리 Job 으로 등록한다.

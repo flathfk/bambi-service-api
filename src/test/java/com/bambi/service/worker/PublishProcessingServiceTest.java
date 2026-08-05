@@ -3,6 +3,7 @@ package com.bambi.service.worker;
 import com.bambi.service.agent.publish.dto.PublishItem;
 import com.bambi.service.card.Card;
 import com.bambi.service.card.CardRepository;
+import com.bambi.service.notification.NotificationService;
 import com.bambi.service.report.Report;
 import com.bambi.service.report.ReportRepository;
 import org.junit.jupiter.api.Test;
@@ -26,8 +27,9 @@ class PublishProcessingServiceTest {
 
     private final CardRepository cardRepository = mock(CardRepository.class);
     private final ReportRepository reportRepository = mock(ReportRepository.class);
+    private final NotificationService notificationService = mock(NotificationService.class);
     private final PublishProcessingService service =
-            new PublishProcessingService(cardRepository, reportRepository);
+            new PublishProcessingService(cardRepository, reportRepository, notificationService);
 
     private static PublishItem item(String contentId, int version, String title, String summary) {
         // content_tags 미도착(단계적 롤아웃 전) → tags(topic)로 폴백되는 경로
@@ -52,6 +54,13 @@ class PublishProcessingServiceTest {
         ArgumentCaptor<Card> cardCaptor = ArgumentCaptor.forClass(Card.class);
         verify(cardRepository).save(cardCaptor.capture());                   // 카드(요약)도 저장
         assertThat(cardCaptor.getValue().getInterestTags()).containsExactly("코스피");   // 발행 태그 저장
+        verify(notificationService).notifyReportReady(
+                org.mockito.ArgumentMatchers.eq(1L),
+                org.mockito.ArgumentMatchers.eq("c1"),
+                org.mockito.ArgumentMatchers.eq(1),
+                org.mockito.ArgumentMatchers.eq("제목"),
+                org.mockito.ArgumentMatchers.eq("요약"),
+                any());
     }
 
     @Test
@@ -95,6 +104,8 @@ class PublishProcessingServiceTest {
         // 갱신은 dirty checking — 새 row insert(save) 아님
         verify(cardRepository, never()).save(any(Card.class));
         verify(reportRepository, never()).save(any(Report.class));
+        verify(notificationService, never()).notifyReportReady(
+                any(), any(), any(), any(), any(), any());
     }
 
     @Test

@@ -2,6 +2,7 @@ package com.bambi.service.agent;
 
 import com.bambi.service.agent.dto.AgentClippingRequest;
 import com.bambi.service.agent.dto.AgentContextRequest;
+import com.bambi.service.agent.dto.AgentInterestTaxonomyRequest;
 import com.bambi.service.agent.dto.AgentUrlSourceRequest;
 import com.bambi.service.common.error.ApiException;
 import com.bambi.service.common.error.ErrorCode;
@@ -14,6 +15,8 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.client.MockRestServiceServer;
 import org.springframework.web.client.RestClient;
+
+import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.catchThrowableOfType;
@@ -37,6 +40,7 @@ class RestClientAgentGatewayTest {
     private static final String CONTEXT_URL = "http://agent.local/internal/v1/users/7/context";
     private static final String CLIPPING_URL = "http://agent.local/internal/v1/users/7/wiki-sources/clippings";
     private static final String URL_SOURCE_URL = "http://agent.local/internal/v1/users/7/wiki-sources/urls";
+    private static final String TAXONOMY_URL = "http://agent.local/internal/v1/interest-taxonomies/1.0.0";
 
     private MockRestServiceServer server;
     private AgentCallLogger callLogger;
@@ -79,6 +83,22 @@ class RestClientAgentGatewayTest {
         gateway.syncUserContext(7, AgentContextRequest.forVersion(1)); // 예외 없이 통과
 
         verify(callLogger).logResponse(eq(1L), eq(409), anyInt(), any());
+    }
+
+    @Test
+    @DisplayName("관심사 taxonomy는 버전 경로로 PUT한다")
+    void syncInterestTaxonomyUsesVersionPath() {
+        server.expect(requestTo(TAXONOMY_URL))
+                .andExpect(method(HttpMethod.PUT))
+                .andRespond(withSuccess("{}", MediaType.APPLICATION_JSON));
+        var request = new AgentInterestTaxonomyRequest(
+                "1.0.0", "a".repeat(64), "ko-KR", List.of());
+
+        gateway.syncInterestTaxonomy(request);
+
+        server.verify();
+        verify(callLogger).logRequest(eq(null), eq("/internal/v1/interest-taxonomies/1.0.0"), any());
+        verify(callLogger).logResponse(eq(1L), eq(200), anyInt(), any());
     }
 
     @Test

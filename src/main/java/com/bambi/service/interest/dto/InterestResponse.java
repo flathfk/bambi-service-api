@@ -9,6 +9,9 @@ public record InterestResponse(
         Long id,
         String name,
         InterestSource source,
+        String taxonomyVersion,
+        String categoryId,
+        String topicId,
         OffsetDateTime createdAt) {
 
     public static InterestResponse from(Interest interest) {
@@ -16,6 +19,9 @@ public record InterestResponse(
                 interest.getId(),
                 interest.getName(),
                 interest.getSource(),
+                interest.getTaxonomyVersion(),
+                interest.getTaxonomyCategoryId(),
+                interest.getTaxonomyTopicId(),
                 interest.getCreatedAt());
     }
 }

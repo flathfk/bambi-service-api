@@ -12,6 +12,9 @@ import java.util.List;
  * @param plan                   요금제 (free | paid)
  * @param preferredLanguage      선호 언어 (기본 ko)
  * @param personalizationEnabled 개인화 사용 여부
+ * @param interestTaxonomyVersion 선택 ID를 해석할 taxonomy 버전
+ * @param selectedCategoryIds    온보딩에서 선택한 Category 안정 ID
+ * @param selectedTopicIds       온보딩에서 선택한 Topic 안정 ID
  * @param blockedInterestIds     사용자가 차단(삭제)한 관심사 ID 목록
  * @param blockedSourceIds       사용자가 차단(삭제)한 소스 ID 목록
  * @param signupInterests        온보딩에서 사용자가 직접 설정한 관심사 목록
@@ -21,11 +24,12 @@ public record AgentContextRequest(
         @JsonProperty("plan") String plan,
         @JsonProperty("preferred_language") String preferredLanguage,
         @JsonProperty("personalization_enabled") boolean personalizationEnabled,
+        @JsonProperty("interest_taxonomy_version") String interestTaxonomyVersion,
+        @JsonProperty("selected_category_ids") List<String> selectedCategoryIds,
+        @JsonProperty("selected_topic_ids") List<String> selectedTopicIds,
         @JsonProperty("blocked_interest_ids") List<String> blockedInterestIds,
         @JsonProperty("blocked_source_ids") List<String> blockedSourceIds,
         @JsonProperty("signup_interests") List<AgentSignupInterest> signupInterests) {
-
-    private static final String USER_SELECTED_CATEGORY = "사용자 선택 관심사";
 
     /**
      * 지정 버전의 컨텍스트 요청. 필드 값은 현재 알려진 사용자 컨텍스트를 싣는다 —
@@ -40,14 +44,27 @@ public record AgentContextRequest(
     public static AgentContextRequest forVersion(int version, List<String> signupInterestNames) {
         List<AgentSignupInterest> signupInterests = signupInterestNames.isEmpty()
                 ? List.of()
-                : List.of(new AgentSignupInterest(USER_SELECTED_CATEGORY, signupInterestNames));
+                : List.of(new AgentSignupInterest(null, signupInterestNames));
+        return forVersion(version, null, List.of(), List.of(), signupInterests);
+    }
+
+    /** taxonomy 선택 ID와 사람이 읽는 관심사 묶음을 함께 싣는 컨텍스트 요청을 만든다. */
+    public static AgentContextRequest forVersion(
+            int version,
+            String taxonomyVersion,
+            List<String> selectedCategoryIds,
+            List<String> selectedTopicIds,
+            List<AgentSignupInterest> signupInterests) {
         return new AgentContextRequest(
                 version,
                 "free",
                 "ko",
                 true,
+                taxonomyVersion,
+                List.copyOf(selectedCategoryIds),
+                List.copyOf(selectedTopicIds),
                 List.of(),
                 List.of(),
-                signupInterests);
+                List.copyOf(signupInterests));
     }
 }

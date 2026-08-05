@@ -2,6 +2,7 @@ package com.bambi.service.agent;
 
 import com.bambi.service.agent.dto.AgentClippingRequest;
 import com.bambi.service.agent.dto.AgentContextRequest;
+import com.bambi.service.agent.dto.AgentInterestTaxonomyRequest;
 import com.bambi.service.agent.dto.AgentUrlSourceRequest;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -74,6 +75,35 @@ public class RestClientAgentGateway implements AgentGateway {
 
         } catch (RestClientException e) {
             // 연결 실패/타임아웃 등 (응답 자체가 없음)
+            callLogger.logResponse(reqLogId, null, elapsedMs(startNanos), e.getMessage());
+            throw AgentErrors.connectFailed(e);
+        }
+    }
+
+    @Override
+    public void syncInterestTaxonomy(AgentInterestTaxonomyRequest request) {
+        String path = internalPrefix + "/interest-taxonomies/" + request.version();
+        String requestBody = toJson(request);
+        Long reqLogId = callLogger.logRequest(null, path, requestBody);
+        long startNanos = System.nanoTime();
+        try {
+            ResponseEntity<String> resp = restClient.put()
+                    .uri(path)
+                    .header("X-Request-ID", UUID.randomUUID().toString())
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .body(requestBody != null ? requestBody : request)
+                    .retrieve()
+                    .toEntity(String.class);
+            callLogger.logResponse(
+                    reqLogId, resp.getStatusCode().value(), elapsedMs(startNanos), resp.getBody());
+        } catch (RestClientResponseException e) {
+            callLogger.logResponse(
+                    reqLogId,
+                    e.getStatusCode().value(),
+                    elapsedMs(startNanos),
+                    e.getResponseBodyAsString());
+            throw AgentErrors.unavailable(e, "agent 관심사 taxonomy 동기화 실패");
+        } catch (RestClientException e) {
             callLogger.logResponse(reqLogId, null, elapsedMs(startNanos), e.getMessage());
             throw AgentErrors.connectFailed(e);
         }
