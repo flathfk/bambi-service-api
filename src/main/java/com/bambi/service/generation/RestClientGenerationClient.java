@@ -3,6 +3,8 @@ package com.bambi.service.generation;
 import com.bambi.service.agent.AgentErrors;
 import com.bambi.service.common.error.ErrorCode;
 import com.bambi.service.generation.dto.GenerationRequest;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -36,16 +38,19 @@ public class RestClientGenerationClient implements GenerationClient {
 
     private final RestClient restClient;
     private final String internalPrefix;
+    private final ObjectMapper objectMapper;
 
     public RestClientGenerationClient(
             RestClient agentRestClient,
-            @Value("${app.agent.internal-prefix}") String internalPrefix) {
+            @Value("${app.agent.internal-prefix}") String internalPrefix,
+            ObjectMapper objectMapper) {
         this.restClient = agentRestClient;
         this.internalPrefix = internalPrefix;
+        this.objectMapper = objectMapper;
     }
 
     @Override
-    public void requestGeneration(long userId, GenerationRequest request) {
+    public String requestGeneration(long userId, GenerationRequest request) {
         String path = internalPrefix + "/users/" + userId + "/generations";
         try {
             ResponseEntity<String> resp = restClient.post()
@@ -57,9 +62,11 @@ public class RestClientGenerationClient implements GenerationClient {
                     .toEntity(String.class);
             // 202 Accepted 가 정상 — Job 등록만 확인한다(결과는 발행 폴링으로 수령).
             // 매일 전 사용자 대상 호출이라 info 는 한 줄 요약만, 무거운 응답 body 는 debug 로 내린다.
-            log.info("[GenerationClient] 생성 요청 userId={}, idempotencyKey={}, status={}",
-                    userId, request.idempotencyKey(), resp.getStatusCode().value());
+            String jobId = extractJobId(resp.getBody());
+            log.info("[GenerationClient] 생성 요청 userId={}, idempotencyKey={}, status={}, jobId={}",
+                    userId, request.idempotencyKey(), resp.getStatusCode().value(), jobId);
             log.debug("[GenerationClient] 생성 응답 body userId={}: {}", userId, resp.getBody());
+            return jobId;
 
         } catch (RestClientResponseException e) {
             log.warn("[GenerationClient] 생성 요청 실패 userId={} status={} body={}",
@@ -68,6 +75,20 @@ public class RestClientGenerationClient implements GenerationClient {
         } catch (RestClientException e) {
             log.warn("[GenerationClient] 생성 요청 연결 실패 userId={}: {}", userId, e.getMessage());
             throw AgentErrors.connectFailed(e);
+        }
+    }
+
+    /** 202 응답 body 에서 job_id 를 꺼낸다. 파싱 실패해도 접수는 성공이므로 null 로 둔다. */
+    private String extractJobId(String body) {
+        if (body == null || body.isBlank()) {
+            return null;
+        }
+        try {
+            JsonNode node = objectMapper.readTree(body).get("job_id");
+            return node != null && !node.isNull() ? node.asText() : null;
+        } catch (Exception e) {
+            log.warn("[GenerationClient] job_id 파싱 실패 — null 반환: {}", e.getMessage());
+            return null;
         }
     }
 }

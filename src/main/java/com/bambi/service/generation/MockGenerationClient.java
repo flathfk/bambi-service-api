@@ -6,6 +6,8 @@ import org.slf4j.LoggerFactory;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
+import java.util.UUID;
+
 /**
  * Mock — 실제 agent 를 호출하지 않고 생성 요청을 로그로만 남긴다.
  * 스케줄러 구조·멱등키·예약 시각 규약을 검증하기 위한 인프로세스 스텁.
@@ -21,8 +23,10 @@ public class MockGenerationClient implements GenerationClient {
     private static final Logger log = LoggerFactory.getLogger(MockGenerationClient.class);
 
     @Override
-    public void requestGeneration(long userId, GenerationRequest request) {
-        log.info("[MockGeneration] 생성 요청 userId={}, idempotencyKey={}, contentType={}, scheduledAt={}",
-                userId, request.idempotencyKey(), request.contentType(), request.scheduledAt());
+    public String requestGeneration(long userId, GenerationRequest request) {
+        String jobId = "mock-job-" + UUID.randomUUID();
+        log.info("[MockGeneration] 생성 요청 userId={}, idempotencyKey={}, contentType={}, jobId={}",
+                userId, request.idempotencyKey(), request.contentType(), jobId);
+        return jobId;
     }
 }
