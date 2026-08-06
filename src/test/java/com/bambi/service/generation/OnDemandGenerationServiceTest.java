@@ -31,8 +31,11 @@ class OnDemandGenerationServiceTest {
 
     private final GenerationClient generationClient = mock(GenerationClient.class);
     private final AgentWikiClient wikiClient = mock(AgentWikiClient.class);
+    // 펜딩 접수 레이어 — id 파생 로직이 응답 id 와 결합돼 있어 실제 구현 + repo mock 으로 검증한다.
+    private final GenerationPendingRepository pendingRepository = mock(GenerationPendingRepository.class);
+    private final GenerationPendingService pendingService = new GenerationPendingService(pendingRepository);
     private final OnDemandGenerationService service =
-            new OnDemandGenerationService(generationClient, wikiClient, "interest_news_card");
+            new OnDemandGenerationService(generationClient, wikiClient, pendingService, "interest_news_card");
 
     /** 앞쪽 태그일수록 score 를 높게 → 대표 관심사 = names[0]. */
     private static WikiTagsResponse tagsWith(String... names) {
@@ -105,5 +108,40 @@ class OnDemandGenerationServiceTest {
                 .isEqualTo(ErrorCode.VALIDATION_ERROR);
 
         verify(generationClient, never()).requestGeneration(any(Long.class), any());
+        // 접수가 안 됐으니 펜딩도 안 남는다
+        verify(pendingRepository, never()).insertPending(any(), any(), any(), any(), any(), any(), any());
+    }
+
+    @Test
+    @DisplayName("접수 성공 시 펜딩을 ON_DEMAND 로 기록한다 (topic·agentJobId 포함)")
+    void registersPendingAsOnDemand() {
+        when(wikiClient.getTags(28L)).thenReturn(tagsWith("SK하이닉스"));
+        when(generationClient.requestGeneration(eq(28L), any())).thenReturn("job-99");
+
+        GenerationTriggerResponse response = service.generateForUser(28L);
+
+        // 펜딩 행의 id = 응답 id (멱등키 파생 결정적 UUID — 프론트가 접수 응답과 목록을 매칭)
+        verify(pendingRepository).insertPending(
+                eq(java.util.UUID.fromString(response.id())),
+                eq(28L),
+                any(),
+                eq(GenerationPendingService.REPORT_TYPE_ON_DEMAND),
+                eq("SK하이닉스"),
+                eq("interest_news_card"),
+                eq("job-99"));
+    }
+
+    @Test
+    @DisplayName("펜딩 기록이 실패해도 접수 응답은 정상 반환된다 (기록 실패는 삼킴)")
+    void pendingFailureDoesNotBlockResponse() {
+        when(wikiClient.getTags(28L)).thenReturn(tagsWith("SK하이닉스"));
+        when(generationClient.requestGeneration(eq(28L), any())).thenReturn("job-99");
+        org.mockito.Mockito.doThrow(new RuntimeException("db down"))
+                .when(pendingRepository).insertPending(any(), any(), any(), any(), any(), any(), any());
+
+        GenerationTriggerResponse response = service.generateForUser(28L);
+
+        assertThat(response.status()).isEqualTo("accepted");
+        assertThat(response.id()).isNotBlank();
     }
 }

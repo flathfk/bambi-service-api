@@ -38,16 +38,19 @@ public class GenerationScheduler {
     private final GenerationClient generationClient;
     private final UserRepository userRepository;
     private final AgentWikiClient wikiClient;
+    private final GenerationPendingService pendingService;
     private final String contentType;
 
     public GenerationScheduler(
             GenerationClient generationClient,
             UserRepository userRepository,
             AgentWikiClient wikiClient,
+            GenerationPendingService pendingService,
             @Value("${app.scheduler.generation.content-type:interest_news_card}") String contentType) {
         this.generationClient = generationClient;
         this.userRepository = userRepository;
         this.wikiClient = wikiClient;
+        this.pendingService = pendingService;
         this.contentType = contentType;
     }
 
@@ -75,7 +78,11 @@ public class GenerationScheduler {
                         contentType,
                         null,   // language — 컨텍스트 선호 언어 사용
                         null);  // scheduled_at — 정시 호출이라 즉시 실행(예약 필요 시 +09:00 포함해 지정)
-                generationClient.requestGeneration(userId, request);
+                String agentJobId = generationClient.requestGeneration(userId, request);
+                // 접수 성공 후 펜딩 영속화(MORNING_BRIEFING) — 온디맨드와 같은 결정적 id 규칙.
+                // 재실행·재시도는 같은 멱등키 → 같은 id 라 중복 행이 생기지 않는다.
+                pendingService.register(userId, request.idempotencyKey(),
+                        GenerationPendingService.REPORT_TYPE_MORNING_BRIEFING, topic, contentType, agentJobId);
                 requested++;
             } catch (Exception e) {
                 // agent 다운/일부 실패는 전체를 막지 않는다(컨텍스트 동기화 패턴과 동일).

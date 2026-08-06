@@ -31,8 +31,11 @@ class GenerationSchedulerTest {
     private final GenerationClient client = mock(GenerationClient.class);
     private final UserRepository userRepository = mock(UserRepository.class);
     private final AgentWikiClient wikiClient = mock(AgentWikiClient.class);
+    // 펜딩 접수 레이어 — 실제 구현 + repo mock (기록 실패 삼킴 정책까지 그대로 태운다).
+    private final GenerationPendingRepository pendingRepository = mock(GenerationPendingRepository.class);
+    private final GenerationPendingService pendingService = new GenerationPendingService(pendingRepository);
     private final GenerationScheduler scheduler =
-            new GenerationScheduler(client, userRepository, wikiClient, "interest_news_card");
+            new GenerationScheduler(client, userRepository, wikiClient, pendingService, "interest_news_card");
 
     /** 대표 관심사 태그 하나짜리 프로필. */
     private static WikiTagsResponse profileWith(String tag) {
@@ -63,6 +66,11 @@ class GenerationSchedulerTest {
                 .allMatch(r -> "interest_news_card".equals(r.contentType()))
                 .allMatch(r -> "반도체".equals(r.topic()))
                 .anyMatch(r -> r.idempotencyKey().endsWith("-1-interest_news_card"));
+        // 접수마다 펜딩을 MORNING_BRIEFING 으로 기록한다
+        verify(pendingRepository, times(3)).insertPending(
+                any(), anyLong(), any(),
+                eq(GenerationPendingService.REPORT_TYPE_MORNING_BRIEFING),
+                eq("반도체"), eq("interest_news_card"), any());
     }
 
     @Test
@@ -88,5 +96,7 @@ class GenerationSchedulerTest {
 
         // 2번이 터져도 1·3번은 요청됨 (총 3번 호출 시도)
         verify(client, times(3)).requestGeneration(anyLong(), any());
+        // 실패한 2번은 접수가 안 됐으니 펜딩도 안 남는다 (1·3번만 기록)
+        verify(pendingRepository, times(2)).insertPending(any(), anyLong(), any(), any(), any(), any(), any());
     }
 }
