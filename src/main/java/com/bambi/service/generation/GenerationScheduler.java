@@ -2,6 +2,7 @@ package com.bambi.service.generation;
 
 import com.bambi.service.generation.dto.GenerationRequest;
 import com.bambi.service.user.UserRepository;
+import com.bambi.service.wiki.AgentWikiClient;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -36,18 +37,18 @@ public class GenerationScheduler {
 
     private final GenerationClient generationClient;
     private final UserRepository userRepository;
+    private final AgentWikiClient wikiClient;
     private final String contentType;
-    private final String topic;
 
     public GenerationScheduler(
             GenerationClient generationClient,
             UserRepository userRepository,
-            @Value("${app.scheduler.generation.content-type:interest_news_card}") String contentType,
-            @Value("${app.scheduler.generation.topic:오늘의 관심사 뉴스}") String topic) {
+            AgentWikiClient wikiClient,
+            @Value("${app.scheduler.generation.content-type:interest_news_card}") String contentType) {
         this.generationClient = generationClient;
         this.userRepository = userRepository;
+        this.wikiClient = wikiClient;
         this.contentType = contentType;
-        this.topic = topic;
     }
 
     /** 매일 지정 시각(기본 07:00 KST)에 실행. 한 사용자 실패가 나머지를 막지 않는다. */
@@ -58,8 +59,16 @@ public class GenerationScheduler {
         log.info("[GenerationScheduler] 생성 트리거 시작 window={}, users={}", window, userIds.size());
 
         int requested = 0;
+        int skipped = 0;
         for (Long userId : userIds) {
             try {
+                // 검색 주제 = 사용자 대표 관심사(위키 태그 score 최고). topic 은 라벨이 아니라 실제 검색어라
+                // 고정 문구를 쓰면 엉뚱한 기사를 물어온다(유림 확인 08-05). 관심사 없으면 생성할 게 없어 건너뛴다.
+                String topic = wikiClient.getTags(userId).topTopic().orElse(null);
+                if (topic == null) {
+                    skipped++;
+                    continue;
+                }
                 GenerationRequest request = new GenerationRequest(
                         idempotencyKey(window, userId, contentType),
                         topic,
@@ -73,7 +82,8 @@ public class GenerationScheduler {
                 log.warn("[GenerationScheduler] 사용자 생성 요청 실패 userId={} — 건너뜀", userId, e);
             }
         }
-        log.info("[GenerationScheduler] 생성 트리거 완료 요청={}/{}", requested, userIds.size());
+        log.info("[GenerationScheduler] 생성 트리거 완료 요청={}/{} (관심사없음 건너뜀={})",
+                requested, userIds.size(), skipped);
     }
 
     /**

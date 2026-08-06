@@ -76,4 +76,4 @@ app:
       enabled: ${SCHEDULER_GENERATION_ENABLED:false}
       cron: ${SCHEDULER_GENERATION_CRON:0 0 7 * * *}   # 매일 07:00 KST
       content-type: ${SCHEDULER_GENERATION_CONTENT_TYPE:interest_news_card}
-      topic: ${SCHEDULER_GENERATION_TOPIC:오늘의 관심사 뉴스}
+      # topic(검색 주제)은 고정값이 아니라 사용자별 대표 관심사(위키 태그 score 최고)를 런타임에 사용한다.

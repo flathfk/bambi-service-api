@@ -2,7 +2,9 @@ package com.bambi.service.wiki.dto;
 
 import com.fasterxml.jackson.annotation.JsonAlias;
 
+import java.util.Comparator;
 import java.util.List;
+import java.util.Optional;
 
 /**
  * agent 관심 Profile 조회 중계 응답 (GET /api/wiki/tags).
@@ -22,5 +24,20 @@ public record WikiTagsResponse(
     /** 아직 활성 관심 Profile이 없는 사용자(agent 404) — 빈 목록으로 정규화한다. */
     public static WikiTagsResponse empty() {
         return new WikiTagsResponse(null, 0, "empty", null, List.of());
+    }
+
+    /**
+     * 생성 검색 주제로 쓸 대표 관심사(태그) 1개 — score 가 가장 높은 태그.
+     * 계약상 생성 요청의 topic 은 라벨이 아니라 <b>실제 검색 주제</b>라, 고정 문구 대신 이 값을 넣는다
+     * (유림 확인 08-05). 관심사가 없으면 empty → 호출부가 생성을 거절/건너뛴다.
+     */
+    public Optional<String> topTopic() {
+        if (tags == null) {
+            return Optional.empty();
+        }
+        return tags.stream()
+                .filter(t -> t.tag() != null && !t.tag().isBlank())
+                .max(Comparator.comparingDouble(WikiTag::score))
+                .map(WikiTag::tag);
     }
 }

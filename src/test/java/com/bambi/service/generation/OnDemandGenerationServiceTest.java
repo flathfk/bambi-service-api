@@ -23,26 +23,30 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
- * {@link OnDemandGenerationService} — 관심사 종합 즉시 생성: 관심사 있으면 id(항상)+agentJobId(참고) 반환,
- * 없으면 VALIDATION_ERROR.
+ * {@link OnDemandGenerationService} — 대표 관심사(score 최고)를 검색 주제로 즉시 생성.
+ * 관심사 있으면 id(항상)+agentJobId(참고) 반환, 없으면 VALIDATION_ERROR.
+ * topic 은 표시 라벨이 아니라 실제 검색어라 대표 관심사를 넣는다(우석/유림 08-05).
  */
 class OnDemandGenerationServiceTest {
 
     private final GenerationClient generationClient = mock(GenerationClient.class);
     private final AgentWikiClient wikiClient = mock(AgentWikiClient.class);
     private final OnDemandGenerationService service =
-            new OnDemandGenerationService(generationClient, wikiClient, "내 관심사 종합 브리핑", "interest_news_card");
+            new OnDemandGenerationService(generationClient, wikiClient, "interest_news_card");
 
+    /** 앞쪽 태그일수록 score 를 높게 → 대표 관심사 = names[0]. */
     private static WikiTagsResponse tagsWith(String... names) {
-        List<WikiTag> tags = java.util.Arrays.stream(names)
-                .map(n -> new WikiTag("id-" + n, n, "organization", 1.0, 0.7, List.of(), java.util.Map.of()))
-                .toList();
+        List<WikiTag> tags = new java.util.ArrayList<>();
+        for (int i = 0; i < names.length; i++) {
+            tags.add(new WikiTag("id-" + names[i], names[i], "organization",
+                    1.0 - i * 0.1, 0.7, List.of(), java.util.Map.of()));
+        }
         return new WikiTagsResponse("prof", 1, "active", null, tags);
     }
 
     @Test
-    @DisplayName("관심사가 있으면 종합 생성을 접수하고 id(멱등키 파생)+agentJobId 를 반환한다")
-    void triggersWithInterestsAndReturnsIds() {
+    @DisplayName("대표 관심사(score 최고)를 검색 주제로 접수하고 id(멱등키 파생)+agentJobId 를 반환한다")
+    void triggersWithTopInterestReturnsIds() {
         when(wikiClient.getTags(28L)).thenReturn(tagsWith("SK하이닉스", "삼성전자"));
         when(generationClient.requestGeneration(eq(28L), any())).thenReturn("job-99");
 
@@ -52,7 +56,8 @@ class OnDemandGenerationServiceTest {
         assertThat(response.agentJobId()).isEqualTo("job-99");   // agent 식별자(참고용)
         ArgumentCaptor<GenerationRequest> captor = ArgumentCaptor.forClass(GenerationRequest.class);
         verify(generationClient).requestGeneration(eq(28L), captor.capture());
-        assertThat(captor.getValue().topic()).isEqualTo("내 관심사 종합 브리핑");
+        // 고정 문구가 아니라 대표 관심사가 실제 검색 주제로 들어가야 한다(엉뚱한 기사 방지 — 우석/유림 08-05).
+        assertThat(captor.getValue().topic()).isEqualTo("SK하이닉스");
         assertThat(captor.getValue().idempotencyKey()).startsWith("ondemand-28-interest_news_card-");
         // id 는 항상 보장되고 멱등키에서 결정적으로 파생된다(같은 분 연타 = 같은 id → 펜딩 중복 방지).
         String expectedId = java.util.UUID.nameUUIDFromBytes(
@@ -71,6 +76,22 @@ class OnDemandGenerationServiceTest {
         assertThat(response.status()).isEqualTo("accepted");
         assertThat(response.agentJobId()).isNull();     // 참고용 — null 가능
         assertThat(response.id()).isNotBlank();         // 펜딩 키는 항상 보장
+    }
+
+    @Test
+    @DisplayName("대표 관심사는 순서가 아니라 score 최고 태그로 고른다")
+    void picksHighestScoreNotFirst() {
+        WikiTagsResponse interests = new WikiTagsResponse("prof", 1, "active", null, List.of(
+                new WikiTag("id-a", "부동산", "topic", 0.3, 0.7, List.of(), java.util.Map.of()),
+                new WikiTag("id-b", "반도체", "topic", 0.9, 0.7, List.of(), java.util.Map.of())));
+        when(wikiClient.getTags(28L)).thenReturn(interests);
+        when(generationClient.requestGeneration(eq(28L), any())).thenReturn("job-1");
+
+        service.generateForUser(28L);
+
+        ArgumentCaptor<GenerationRequest> captor = ArgumentCaptor.forClass(GenerationRequest.class);
+        verify(generationClient).requestGeneration(eq(28L), captor.capture());
+        assertThat(captor.getValue().topic()).isEqualTo("반도체");   // score 0.9 > 0.3
     }
 
     @Test
