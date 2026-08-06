@@ -23,4 +23,15 @@ public class AgentContextVersionAllocator {
                 .orElseThrow(() -> new IllegalStateException("컨텍스트 동기화 대상 사용자 없음: " + userId));
         return user.bumpAgentContextVersion();
     }
+
+    /**
+     * agent 가 409 STALE 로 알려준 현재 버전에 맞춰 service 카운터를 점프시키고 다음 버전을 반환한다.
+     * 두 카운터가 어긋났을 때 정합용 — 이 값으로 재전송하면 STALE 이 풀린다.
+     */
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public int reconcile(long userId, int agentCurrentVersion) {
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new IllegalStateException("컨텍스트 동기화 대상 사용자 없음: " + userId));
+        return user.reconcileAgentContextVersion(agentCurrentVersion);
+    }
 }
