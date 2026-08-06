@@ -1,5 +1,6 @@
 package com.bambi.service.agent;
 
+import com.bambi.service.interest.InterestChangedEvent;
 import com.bambi.service.user.UserRegisteredEvent;
 import org.junit.jupiter.api.Test;
 
@@ -34,6 +35,28 @@ class AgentContextSyncListenerTest {
         AgentContextSyncListener listener = new AgentContextSyncListener(syncService);
 
         assertThatCode(() -> listener.onUserRegistered(new UserRegisteredEvent(7L)))
+                .doesNotThrowAnyException();
+
+        verify(syncService).syncUserContext(anyLong());
+    }
+
+    @Test
+    void 관심사_변경_이벤트를_받으면_컨텍스트_동기화를_1회_호출한다() {
+        AgentContextSyncService syncService = mock(AgentContextSyncService.class);
+        AgentContextSyncListener listener = new AgentContextSyncListener(syncService);
+
+        listener.onInterestChanged(new InterestChangedEvent(28L));
+
+        verify(syncService).syncUserContext(eq(28L));
+    }
+
+    @Test
+    void 관심사_변경_동기화가_실패해도_예외를_삼켜_변경을_막지_않는다() {
+        AgentContextSyncService syncService = mock(AgentContextSyncService.class);
+        doThrow(new RuntimeException("agent down")).when(syncService).syncUserContext(anyLong());
+        AgentContextSyncListener listener = new AgentContextSyncListener(syncService);
+
+        assertThatCode(() -> listener.onInterestChanged(new InterestChangedEvent(9L)))
                 .doesNotThrowAnyException();
 
         verify(syncService).syncUserContext(anyLong());

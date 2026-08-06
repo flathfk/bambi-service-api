@@ -1,5 +1,6 @@
 package com.bambi.service.agent;
 
+import com.bambi.service.interest.InterestChangedEvent;
 import com.bambi.service.user.UserRegisteredEvent;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -35,6 +36,22 @@ public class AgentContextSyncListener {
             log.info("[AgentContextSync] 가입 컨텍스트 동기화 완료 (userId={})", event.userId());
         } catch (Exception e) {
             log.warn("[AgentContextSync] 가입 컨텍스트 동기화 실패 (userId={}) — 가입은 유지, 재동기 필요",
+                    event.userId(), e);
+        }
+    }
+
+    /**
+     * 관심사 추가·수정·삭제 후(커밋 뒤) agent 컨텍스트를 재동기화한다.
+     * 프론트가 {@code POST /api/interests/sync} 를 빠뜨려도 관심사 변경이 agent 에 반영되게 하는 안전망이다.
+     * 실패해도 관심사 변경 자체는 이미 커밋됐으므로 막지 않는다(로그만 남기고 다음 변경/재동기 대상).
+     */
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    public void onInterestChanged(InterestChangedEvent event) {
+        try {
+            contextSyncService.syncUserContext(event.userId());
+            log.info("[AgentContextSync] 관심사 변경 컨텍스트 동기화 완료 (userId={})", event.userId());
+        } catch (Exception e) {
+            log.warn("[AgentContextSync] 관심사 변경 컨텍스트 동기화 실패 (userId={}) — 변경은 유지, 재동기 필요",
                     event.userId(), e);
         }
     }
