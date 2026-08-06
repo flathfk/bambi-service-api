@@ -10,11 +10,9 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
-import java.nio.charset.StandardCharsets;
 import java.time.OffsetDateTime;
 import java.time.ZoneId;
 import java.time.temporal.ChronoUnit;
-import java.util.UUID;
 
 /**
  * 사용자가 직접 "지금 생성"을 눌렀을 때, 스케줄러를 기다리지 않고 즉시 리포트 생성을 요청한다.
@@ -42,14 +40,17 @@ public class OnDemandGenerationService {
 
     private final GenerationClient generationClient;
     private final AgentWikiClient wikiClient;
+    private final GenerationPendingService pendingService;
     private final String contentType;
 
     public OnDemandGenerationService(
             GenerationClient generationClient,
             AgentWikiClient wikiClient,
+            GenerationPendingService pendingService,
             @Value("${app.scheduler.generation.content-type:interest_news_card}") String contentType) {
         this.generationClient = generationClient;
         this.wikiClient = wikiClient;
+        this.pendingService = pendingService;
         this.contentType = contentType;
     }
 
@@ -67,9 +68,12 @@ public class OnDemandGenerationService {
                 .orElseThrow(() -> new ApiException(ErrorCode.VALIDATION_ERROR, "생성할 관심사가 없습니다."));
         GenerationRequest request = new GenerationRequest(
                 onDemandKey(userId), topic, contentType, null, null);
-        String id = pendingId(request.idempotencyKey());
         // agent 202 body 파싱 실패 시 null 일 수 있어 키로 쓰지 않는다 — 참고용으로만 내린다.
         String agentJobId = generationClient.requestGeneration(userId, request);
+        // 접수 성공 후 펜딩 영속화(ON_DEMAND) — id 는 멱등키 파생이라 트리거 응답과 같은 값.
+        // 기록 실패는 삼켜져 접수 응답을 막지 않는다(register 내부 정책).
+        String id = pendingService.register(userId, request.idempotencyKey(),
+                GenerationPendingService.REPORT_TYPE_ON_DEMAND, topic, contentType, agentJobId);
         log.info("[OnDemandGeneration] 즉시 생성 요청 userId={}, topic={}, idempotencyKey={}, id={}, agentJobId={}",
                 userId, topic, request.idempotencyKey(), id, agentJobId);
         return GenerationTriggerResponse.accepted(id, agentJobId);
@@ -79,10 +83,5 @@ public class OnDemandGenerationService {
     private String onDemandKey(long userId) {
         long minute = OffsetDateTime.now(KST).truncatedTo(ChronoUnit.MINUTES).toEpochSecond();
         return "ondemand-" + userId + "-" + contentType + "-" + minute;
-    }
-
-    /** 펜딩 키(id) — 멱등키에서 파생한 결정적 UUID. 같은 멱등키는 항상 같은 id → 펜딩 중복 방지. */
-    private static String pendingId(String idempotencyKey) {
-        return UUID.nameUUIDFromBytes(idempotencyKey.getBytes(StandardCharsets.UTF_8)).toString();
     }
 }
