@@ -4,6 +4,7 @@ import com.bambi.service.common.error.ApiException;
 import com.bambi.service.common.error.ErrorCode;
 import com.bambi.service.generation.dto.GenerationRequest;
 import com.bambi.service.generation.dto.GenerationTriggerResponse;
+import com.bambi.service.interest.InterestService;
 import com.bambi.service.wiki.AgentWikiClient;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -41,33 +42,41 @@ public class OnDemandGenerationService {
     private final GenerationClient generationClient;
     private final AgentWikiClient wikiClient;
     private final GenerationPendingService pendingService;
+    private final InterestService interestService;
     private final String contentType;
 
     public OnDemandGenerationService(
             GenerationClient generationClient,
             AgentWikiClient wikiClient,
             GenerationPendingService pendingService,
+            InterestService interestService,
             @Value("${app.scheduler.generation.content-type:interest_news_card}") String contentType) {
         this.generationClient = generationClient;
         this.wikiClient = wikiClient;
         this.pendingService = pendingService;
+        this.interestService = interestService;
         this.contentType = contentType;
     }
 
     /**
-     * 요청한 사용자의 대표 관심사를 검색 주제로 즉시 생성 Job 을 접수하고 트리거 응답을 반환한다.
-     * 관심사가 없으면 VALIDATION_ERROR. 실제 종합은 agent 가 사용자 위키 컨텍스트로 수행한다.
+     * 즉시 생성 Job 을 접수하고 트리거 응답을 반환한다. 검색 주제는 두 갈래다(2026-08-06 최종 계약):
+     * <ul>
+     *   <li>{@code requestedTopic} 이 오면(사용자가 홈 rail 에서 선택) <b>내 관심사에 있는 이름만</b>
+     *       허용한다. 없으면 자동 추가하지 않고 {@link ErrorCode#INTEREST_NOT_FOUND}(404) 로 거절한다 —
+     *       생성 버튼이 관심사를 무의식적으로 늘리지 않게 하는 정책(여진 확정 15:51). Wiki 태그로
+     *       생성하려면 프론트가 {@code POST /api/interests} 로 명시적으로 추가한 뒤 다시 요청한다.
+     *   <li>없으면 기존처럼 대표 관심사(위키 태그 score 최고)를 자동 선택한다(하위호환).
+     *       관심사가 하나도 없으면 VALIDATION_ERROR.
+     * </ul>
      *
      * <p>응답 키 id 는 service 발급이라 항상 보장, agentJobId 는 agent 식별자(파싱 실패 시 null 가능).
      */
-    public GenerationTriggerResponse generateForUser(long userId) {
-        // 대표 관심사(score 최고 태그)를 검색 주제로 쓴다. 없으면 종합할 게 없어 거절한다.
-        // 프론트는 버튼 비활성화가 1차 가드이고, 서버는 표준 코드로 방어한다
-        // (프론트 constants/errors.ts 가 알려진 코드만 매핑 → VALIDATION_ERROR 로 통일, message 는 미노출).
-        String topic = wikiClient.getTags(userId).topTopic()
-                .orElseThrow(() -> new ApiException(ErrorCode.VALIDATION_ERROR, "생성할 관심사가 없습니다."));
+    public GenerationTriggerResponse generateForUser(long userId, String requestedTopic) {
+        String topic = resolveTopic(userId, requestedTopic);
+        // report_type 을 요청에 실어 agent 가 발행 snapshot 에 에코하게 한다(2026-08-06 계약).
         GenerationRequest request = new GenerationRequest(
-                onDemandKey(userId), topic, contentType, null, null);
+                onDemandKey(userId), topic, contentType, null, null,
+                GenerationPendingService.REPORT_TYPE_ON_DEMAND);
         // agent 202 body 파싱 실패 시 null 일 수 있어 키로 쓰지 않는다 — 참고용으로만 내린다.
         String agentJobId = generationClient.requestGeneration(userId, request);
         // 접수 성공 후 펜딩 영속화(ON_DEMAND) — id 는 멱등키 파생이라 트리거 응답과 같은 값.
@@ -77,6 +86,27 @@ public class OnDemandGenerationService {
         log.info("[OnDemandGeneration] 즉시 생성 요청 userId={}, topic={}, idempotencyKey={}, id={}, agentJobId={}",
                 userId, topic, request.idempotencyKey(), id, agentJobId);
         return GenerationTriggerResponse.accepted(id, agentJobId);
+    }
+
+    /**
+     * 검색 주제 확정 — 선택 topic 이 있으면 내 관심사 존재를 검증하고, 없으면 대표 관심사를 쓴다.
+     * 프론트는 버튼 비활성화·목록 제한이 1차 가드이고, 서버는 표준 코드로 방어한다
+     * (프론트 constants/errors.ts 가 알려진 코드만 매핑 → 7종 표준 코드만 쓴다).
+     */
+    private String resolveTopic(long userId, String requestedTopic) {
+        if (requestedTopic != null && !requestedTopic.isBlank()) {
+            String topic = requestedTopic.strip();
+            // 내 관심사에 없는 주제는 자동 추가하지 않고 거절한다 — 생성이 관심사를 무의식적으로
+            // 늘리지 않게 하는 정책(여진 확정 15:51). 프론트는 404 를 받으면 선택을 초기화하고
+            // /api/interests 를 재조회한 뒤, Wiki 태그는 명시적으로 추가한 다음 다시 요청한다.
+            if (!interestService.existsByName(userId, topic)) {
+                throw new ApiException(ErrorCode.INTEREST_NOT_FOUND, "내 관심사에 없는 주제입니다.");
+            }
+            return topic;
+        }
+        // 대표 관심사(score 최고 태그)를 검색 주제로 쓴다. 없으면 종합할 게 없어 거절한다.
+        return wikiClient.getTags(userId).topTopic()
+                .orElseThrow(() -> new ApiException(ErrorCode.VALIDATION_ERROR, "생성할 관심사가 없습니다."));
     }
 
     /** on-demand 멱등키(분 단위) — 연타는 1건, 시간 지나면 새 생성. */
