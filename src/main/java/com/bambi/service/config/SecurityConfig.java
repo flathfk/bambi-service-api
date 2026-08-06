@@ -31,7 +31,7 @@ import java.util.List;
 /**
  * 인증/인가 설정 (P0).
  * - stateless(JWT), 세션 없음
- * - /api/health, /api/version, /api/auth/signup, /api/auth/login 은 공개
+ * - 상태·로그인·OAuth protocol endpoint는 공개
  * - /api/admin/** 는 ADMIN 권한 필수, 그 외는 인증 필요
  * - 401/403 도 공통 응답 포맷(JSON)으로 내려준다
  */
@@ -62,6 +62,11 @@ public class SecurityConfig {
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers("/api/health", "/api/version", "/api/interest-taxonomy").permitAll()
                         .requestMatchers("/api/auth/signup", "/api/auth/login").permitAll()
+                        .requestMatchers("/.well-known/oauth-authorization-server").permitAll()
+                        .requestMatchers("/api/oauth/authorize", "/api/oauth/register",
+                                "/api/oauth/token", "/api/oauth/revoke").permitAll()
+                        // compose 내부에서 MCP 전용 프로세스만 호출하며 Controller가 별도 토큰을 검증한다.
+                        .requestMatchers("/internal/oauth/introspect").permitAll()
                         // 공개 피드·공개 프로필은 비로그인 열람 허용 (팀 정책: 홈=공개 SNS).
                         // GET 만 공개 — 팔로우/좋아요/공개설정 등 쓰기는 아래 authenticated 로 막힌다.
                         // 팔로잉 스코프(?following=true)는 로그인 전제라 서비스에서 401 을 던진다.
