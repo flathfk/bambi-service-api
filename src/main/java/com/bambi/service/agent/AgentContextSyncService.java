@@ -8,6 +8,8 @@ import com.bambi.service.interest.InterestRepository;
 import com.bambi.service.interest.InterestSource;
 import com.bambi.service.interest.taxonomy.InterestTaxonomyService;
 import com.bambi.service.interest.taxonomy.dto.InterestTaxonomyResponse;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
@@ -26,6 +28,8 @@ import java.util.Map;
  */
 @Service
 public class AgentContextSyncService {
+
+    private static final Logger log = LoggerFactory.getLogger(AgentContextSyncService.class);
 
     private final InterestRepository interestRepository;
     private final InterestTaxonomyService taxonomyService;
@@ -55,14 +59,25 @@ public class AgentContextSyncService {
                 .findByUserIdAndSourceAndDeletedAtIsNullOrderByNameAsc(userId, InterestSource.USER);
         ContextInterests contextInterests = buildContextInterests(taxonomy, interests);
         int version = versionAllocator.allocate(userId);
-        agentGateway.syncUserContext(
-                userId,
-                AgentContextRequest.forVersion(
-                        version,
-                        contextInterests.taxonomyVersion(),
-                        contextInterests.categoryIds(),
-                        contextInterests.topicIds(),
-                        contextInterests.signupInterests()));
+        try {
+            agentGateway.syncUserContext(userId, toRequest(version, contextInterests));
+        } catch (StaleContextVersionException e) {
+            // service 로컬 카운터가 agent 실제 버전보다 낮아 거절됨 → agent 가 준 현재 버전에 맞춰 1회 재전송.
+            // (예전엔 여기서 조용히 넘어가 관심사가 영영 반영 안 되던 버그 — 유림 08-06)
+            int reconciled = versionAllocator.reconcile(userId, e.currentVersion());
+            log.info("[AgentContextSync] 버전 정합 재전송 (userId={}, agentCurrent={}, 재전송버전={})",
+                    userId, e.currentVersion(), reconciled);
+            agentGateway.syncUserContext(userId, toRequest(reconciled, contextInterests));
+        }
+    }
+
+    private AgentContextRequest toRequest(int version, ContextInterests contextInterests) {
+        return AgentContextRequest.forVersion(
+                version,
+                contextInterests.taxonomyVersion(),
+                contextInterests.categoryIds(),
+                contextInterests.topicIds(),
+                contextInterests.signupInterests());
     }
 
     /** taxonomy 선택을 Category 묶음으로, 직접 입력 토픽을 Category 없는 묶음으로 만든다. */

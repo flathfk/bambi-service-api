@@ -17,8 +17,11 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.Mockito.doNothing;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -70,6 +73,23 @@ class AgentContextSyncServiceTest {
         assertThat(request.signupInterests().get(0).topics()).containsExactly("AI·머신러닝");
         assertThat(request.signupInterests().get(1).category()).isNull();
         assertThat(request.signupInterests().get(1).topics()).containsExactly("양자 센서 스타트업");
+    }
+
+    @Test
+    void STALE_신호를_받으면_agent_현재버전에_맞춰_한번_재전송한다() {
+        when(versionAllocator.reconcile(1L, 7)).thenReturn(8);
+        // 첫 전송은 STALE(agent 현재 7), 재전송은 성공
+        doThrow(new StaleContextVersionException(7))
+                .doNothing()
+                .when(agentGateway).syncUserContext(anyLong(), any());
+
+        service.syncUserContext(1L);
+
+        verify(versionAllocator).reconcile(1L, 7);
+        ArgumentCaptor<AgentContextRequest> captor = ArgumentCaptor.forClass(AgentContextRequest.class);
+        verify(agentGateway, times(2)).syncUserContext(anyLong(), captor.capture());
+        // 재전송은 정합된 버전(8)으로 나가야 한다
+        assertThat(captor.getAllValues().get(1).contextVersion()).isEqualTo(8);
     }
 
     @Test
