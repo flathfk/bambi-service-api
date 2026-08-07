@@ -6,6 +6,8 @@ import com.bambi.service.card.CardRepository;
 import com.bambi.service.notification.NotificationService;
 import com.bambi.service.report.Report;
 import com.bambi.service.report.ReportRepository;
+import com.bambi.service.user.User;
+import com.bambi.service.user.UserRepository;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
@@ -28,14 +30,23 @@ class PublishProcessingServiceTest {
     private final CardRepository cardRepository = mock(CardRepository.class);
     private final ReportRepository reportRepository = mock(ReportRepository.class);
     private final NotificationService notificationService = mock(NotificationService.class);
+    private final UserRepository userRepository = mock(UserRepository.class);
     private final PublishProcessingService service =
-            new PublishProcessingService(cardRepository, reportRepository, notificationService);
+            new PublishProcessingService(cardRepository, reportRepository, notificationService, userRepository);
 
     private static PublishItem item(String contentId, int version, String title, String summary) {
         // content_tags·report_type 미도착(단계적 롤아웃 전) → tags(topic) 폴백 + reportType null 경로
         return new PublishItem(contentId, "1", version, "hash-" + version, title, summary, "본문-" + version,
                 List.of(new PublishItem.Citation("src", "https://example.com")),
                 List.of("코스피"), null, null);
+    }
+
+    /** 설정 적용 테스트용 사용자 목 — 기본 공개범위 + 알림 수신 여부. */
+    private static User userWith(String defaultVisibility, boolean reportReadyNotification) {
+        User user = mock(User.class);
+        when(user.getDefaultCardVisibility()).thenReturn(defaultVisibility);
+        when(user.isReportReadyNotification()).thenReturn(reportReadyNotification);
+        return user;
     }
 
     @Test
@@ -151,6 +162,54 @@ class PublishProcessingServiceTest {
         verify(reportRepository, never()).save(any(Report.class));
         verify(notificationService, never()).notifyReportReady(
                 any(), any(), any(), any(), any(), any(), any());
+    }
+
+    // ── 사용자 설정(V17) 적용 ──────────────────────────────────
+
+    @Test
+    void 신규_발행카드는_사용자_기본공개범위를_따른다_PUBLIC() {
+        when(cardRepository.findByUserIdAndExternalContentId(1L, "c1")).thenReturn(Optional.empty());
+        when(reportRepository.findByUserIdAndExternalContentId(1L, "c1")).thenReturn(Optional.empty());
+        when(reportRepository.save(any(Report.class))).thenAnswer(inv -> inv.getArgument(0));
+        User user = userWith("PUBLIC", true);   // 중첩 스터빙(UnfinishedStubbing) 회피 — 먼저 만든다
+        when(userRepository.findById(1L)).thenReturn(Optional.of(user));
+
+        service.upsert(item("c1", 1, "제목", "요약"));
+
+        ArgumentCaptor<Card> cardCaptor = ArgumentCaptor.forClass(Card.class);
+        verify(cardRepository).save(cardCaptor.capture());
+        assertThat(cardCaptor.getValue().getVisibility()).isEqualTo("PUBLIC");   // 하드코딩 PRIVATE 이 아니라 설정값
+        verify(notificationService).notifyReportReady(any(), any(), any(), any(), any(), any(), any());
+    }
+
+    @Test
+    void 알림수신_OFF_면_REPORT_READY_알림을_만들지_않는다_카드는_저장() {
+        when(cardRepository.findByUserIdAndExternalContentId(1L, "c1")).thenReturn(Optional.empty());
+        when(reportRepository.findByUserIdAndExternalContentId(1L, "c1")).thenReturn(Optional.empty());
+        when(reportRepository.save(any(Report.class))).thenAnswer(inv -> inv.getArgument(0));
+        User user = userWith("PRIVATE", false);   // 중첩 스터빙 회피 — 먼저 만든다
+        when(userRepository.findById(1L)).thenReturn(Optional.of(user));
+
+        service.upsert(item("c1", 1, "제목", "요약"));
+
+        verify(cardRepository).save(any(Card.class));   // 발행 자체는 진행(카드 저장)
+        verify(notificationService, never()).notifyReportReady(   // 알림만 "생성 안 함"
+                any(), any(), any(), any(), any(), any(), any());
+    }
+
+    @Test
+    void 갱신_카드의_공개범위는_설정을_다시_적용하지_않는다() {
+        // 사용자가 PUBLIC 으로 토글해둔 카드를 더 큰 version 으로 갱신 → 공개범위 유지, 설정 재조회조차 안 함
+        Card existing = Card.fromExternal(1L, "c1", 1, "옛 제목", "옛 요약", null);
+        existing.changeVisibility("PUBLIC");
+        Report existingReport = Report.fromExternal(1L, "c1", 1, "옛 제목", "옛 요약", "옛 본문");
+        when(cardRepository.findByUserIdAndExternalContentId(1L, "c1")).thenReturn(Optional.of(existing));
+        when(reportRepository.findByUserIdAndExternalContentId(1L, "c1")).thenReturn(Optional.of(existingReport));
+
+        service.upsert(item("c1", 2, "새 제목", "새 요약"));
+
+        assertThat(existing.getVisibility()).isEqualTo("PUBLIC");   // 갱신은 공개범위 안 건드림
+        verify(userRepository, never()).findById(any());           // 갱신 경로는 설정 조회조차 안 함
     }
 
     @Test

@@ -6,6 +6,8 @@ import com.bambi.service.card.CardRepository;
 import com.bambi.service.notification.NotificationService;
 import com.bambi.service.report.Report;
 import com.bambi.service.report.ReportRepository;
+import com.bambi.service.user.User;
+import com.bambi.service.user.UserRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -32,14 +34,17 @@ public class PublishProcessingService {
     private final CardRepository cardRepository;
     private final ReportRepository reportRepository;
     private final NotificationService notificationService;
+    private final UserRepository userRepository;
 
     public PublishProcessingService(
             CardRepository cardRepository,
             ReportRepository reportRepository,
-            NotificationService notificationService) {
+            NotificationService notificationService,
+            UserRepository userRepository) {
         this.cardRepository = cardRepository;
         this.reportRepository = reportRepository;
         this.notificationService = notificationService;
+        this.userRepository = userRepository;
     }
 
     /**
@@ -73,6 +78,13 @@ public class PublishProcessingService {
         card.applyReportType(item.normalizedReportType());   // 생성 유형(없으면 null 유지 — 관용)
 
         if (isNew) {
+            // 사용자 설정(V17)을 신규 발행 카드에만 적용한다. 갱신 카드는 사용자가 이미 토글했을 수 있어 건드리지 않는다.
+            User user = userRepository.findById(userId).orElse(null);
+            if (user != null) {
+                // 발행 카드 기본 공개범위 = 사용자 설정(PRIVATE/PUBLIC). 발행 후 개별 토글 가능.
+                card.changeVisibility(user.getDefaultCardVisibility());
+            }   // user 조회 실패(비정상) 시엔 종전 기본값 PRIVATE 유지.
+
             try {
                 cardRepository.save(card);
             } catch (DataIntegrityViolationException e) {
@@ -80,14 +92,20 @@ public class PublishProcessingService {
                 log.info("[PublishWorker] 유니크 충돌 → 멱등 처리 contentId={}", item.contentId());
                 return true;
             }
-            notificationService.notifyReportReady(
-                    userId,
-                    item.contentId(),
-                    item.version(),
-                    item.title(),
-                    item.summary(),
-                    report.getPublicId(),
-                    item.normalizedReportType());
+            // REPORT_READY 알림: 사용자가 수신 OFF 면 알림을 "만들지 않는다"(만들고 숨기는 게 아님).
+            if (user == null || user.isReportReadyNotification()) {
+                notificationService.notifyReportReady(
+                        userId,
+                        item.contentId(),
+                        item.version(),
+                        item.title(),
+                        item.summary(),
+                        report.getPublicId(),
+                        item.normalizedReportType());
+            } else {
+                log.info("[PublishWorker] 알림수신 OFF → REPORT_READY 생성 생략 userId={} contentId={}",
+                        userId, item.contentId());
+            }
         }
         log.info("[PublishWorker] 리포트+카드 {} contentId={} (v{}), reportId={}",
                 isNew ? "발행" : "갱신", item.contentId(), item.version(), report.getId());
