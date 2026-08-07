@@ -66,9 +66,16 @@ public class RestClientAgentGateway implements AgentGateway {
             String body = e.getResponseBodyAsString();
             callLogger.logResponse(reqLogId, status, elapsedMs(startNanos), body);
 
-            // 이미 최신 버전이면(STALE_CONTEXT_VERSION) 오류가 아니라 "이미 반영됨" → 조용히 통과
+            // STALE_CONTEXT_VERSION: service 로컬 카운터가 agent 실제 버전보다 낮아 거절됨.
+            // agent 가 현재 버전(current_context_version)을 실어주면 그 값으로 재전송하도록 신호를 던진다.
+            // (구 agent 는 이 필드가 없으므로 예전처럼 "이미 최신"으로 간주해 통과 — 하위호환)
             if (status == 409 && body != null && body.contains("STALE_CONTEXT_VERSION")) {
-                log.info("[AgentGateway] context 이미 최신(userId={}) — STALE 무시", userId);
+                Integer current = parseCurrentContextVersion(body);
+                if (current != null) {
+                    log.info("[AgentGateway] context STALE(userId={}) — agent current={} 로 재전송 신호", userId, current);
+                    throw new StaleContextVersionException(current);
+                }
+                log.info("[AgentGateway] context STALE(userId={}) — current_context_version 없음(구 agent), 무시", userId);
                 return;
             }
             throw AgentErrors.unavailable(e, "agent 컨텍스트 동기화 실패");
@@ -147,6 +154,21 @@ public class RestClientAgentGateway implements AgentGateway {
         } catch (RestClientException e) {
             callLogger.logResponse(reqLogId, null, elapsedMs(startNanos), e.getMessage());
             throw AgentErrors.connectFailed(e);
+        }
+    }
+
+    /**
+     * 409 STALE 응답 body 에서 agent 현재 버전(error.details.current_context_version)을 읽는다.
+     * 필드가 없거나(구 agent) 파싱 실패면 null → 호출부가 예전처럼 무시하도록 한다(하위호환).
+     */
+    private Integer parseCurrentContextVersion(String body) {
+        try {
+            var node = objectMapper.readTree(body)
+                    .path("error").path("details").path("current_context_version");
+            return node.isIntegralNumber() ? node.asInt() : null;
+        } catch (Exception e) {
+            log.warn("[AgentGateway] STALE body 파싱 실패 — current_context_version 무시", e);
+            return null;
         }
     }
 

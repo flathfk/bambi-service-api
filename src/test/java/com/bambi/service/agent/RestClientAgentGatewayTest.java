@@ -73,15 +73,33 @@ class RestClientAgentGatewayTest {
     }
 
     @Test
-    @DisplayName("STALE_CONTEXT_VERSION(409)은 '이미 최신'이라 오류가 아니라 성공 처리한다")
-    void staleContextVersionIsNotError() {
+    @DisplayName("STALE(409)에 current_context_version 이 없으면(구 agent) 예전처럼 무시하고 통과한다")
+    void staleWithoutCurrentVersionIsSwallowed() {
         server.expect(requestTo(CONTEXT_URL))
                 .andRespond(withStatus(HttpStatus.CONFLICT)
-                        .body("{\"code\":\"STALE_CONTEXT_VERSION\"}")
+                        .body("{\"error\":{\"code\":\"STALE_CONTEXT_VERSION\"}}")
                         .contentType(MediaType.APPLICATION_JSON));
 
-        gateway.syncUserContext(7, AgentContextRequest.forVersion(1)); // 예외 없이 통과
+        gateway.syncUserContext(7, AgentContextRequest.forVersion(1)); // 예외 없이 통과(하위호환)
 
+        verify(callLogger).logResponse(eq(1L), eq(409), anyInt(), any());
+    }
+
+    @Test
+    @DisplayName("STALE(409)에 current_context_version 이 있으면 그 값으로 재전송 신호를 던진다")
+    void staleWithCurrentVersionThrowsSignal() {
+        server.expect(requestTo(CONTEXT_URL))
+                .andRespond(withStatus(HttpStatus.CONFLICT)
+                        .body("{\"success\":false,\"error\":{\"code\":\"STALE_CONTEXT_VERSION\","
+                                + "\"details\":{\"current_context_version\":7}}}")
+                        .contentType(MediaType.APPLICATION_JSON));
+
+        StaleContextVersionException ex = catchThrowableOfType(
+                () -> gateway.syncUserContext(7, AgentContextRequest.forVersion(1)),
+                StaleContextVersionException.class);
+
+        assertThat(ex).isNotNull();
+        assertThat(ex.currentVersion()).isEqualTo(7);
         verify(callLogger).logResponse(eq(1L), eq(409), anyInt(), any());
     }
 

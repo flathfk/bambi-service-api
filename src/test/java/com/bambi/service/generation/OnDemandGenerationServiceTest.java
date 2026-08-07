@@ -31,8 +31,13 @@ class OnDemandGenerationServiceTest {
 
     private final GenerationClient generationClient = mock(GenerationClient.class);
     private final AgentWikiClient wikiClient = mock(AgentWikiClient.class);
-    private final OnDemandGenerationService service =
-            new OnDemandGenerationService(generationClient, wikiClient, "interest_news_card");
+    // 펜딩 접수 레이어 — id 파생 로직이 응답 id 와 결합돼 있어 실제 구현 + repo mock 으로 검증한다.
+    private final GenerationPendingRepository pendingRepository = mock(GenerationPendingRepository.class);
+    private final GenerationPendingService pendingService = new GenerationPendingService(pendingRepository);
+    private final com.bambi.service.interest.InterestService interestService =
+            mock(com.bambi.service.interest.InterestService.class);
+    private final OnDemandGenerationService service = new OnDemandGenerationService(
+            generationClient, wikiClient, pendingService, interestService, "interest_news_card");
 
     /** 앞쪽 태그일수록 score 를 높게 → 대표 관심사 = names[0]. */
     private static WikiTagsResponse tagsWith(String... names) {
@@ -50,7 +55,7 @@ class OnDemandGenerationServiceTest {
         when(wikiClient.getTags(28L)).thenReturn(tagsWith("SK하이닉스", "삼성전자"));
         when(generationClient.requestGeneration(eq(28L), any())).thenReturn("job-99");
 
-        GenerationTriggerResponse response = service.generateForUser(28L);
+        GenerationTriggerResponse response = service.generateForUser(28L, null);
 
         assertThat(response.status()).isEqualTo("accepted");
         assertThat(response.agentJobId()).isEqualTo("job-99");   // agent 식별자(참고용)
@@ -71,7 +76,7 @@ class OnDemandGenerationServiceTest {
         when(wikiClient.getTags(28L)).thenReturn(tagsWith("SK하이닉스"));
         when(generationClient.requestGeneration(eq(28L), any())).thenReturn(null);   // 접수는 성공, 식별자만 못 읽음
 
-        GenerationTriggerResponse response = service.generateForUser(28L);
+        GenerationTriggerResponse response = service.generateForUser(28L, null);
 
         assertThat(response.status()).isEqualTo("accepted");
         assertThat(response.agentJobId()).isNull();     // 참고용 — null 가능
@@ -87,7 +92,7 @@ class OnDemandGenerationServiceTest {
         when(wikiClient.getTags(28L)).thenReturn(interests);
         when(generationClient.requestGeneration(eq(28L), any())).thenReturn("job-1");
 
-        service.generateForUser(28L);
+        service.generateForUser(28L, null);
 
         ArgumentCaptor<GenerationRequest> captor = ArgumentCaptor.forClass(GenerationRequest.class);
         verify(generationClient).requestGeneration(eq(28L), captor.capture());
@@ -99,11 +104,95 @@ class OnDemandGenerationServiceTest {
     void noInterestRejects() {
         when(wikiClient.getTags(28L)).thenReturn(WikiTagsResponse.empty());
 
-        assertThatThrownBy(() -> service.generateForUser(28L))
+        assertThatThrownBy(() -> service.generateForUser(28L, null))
                 .isInstanceOf(ApiException.class)
                 .extracting(e -> ((ApiException) e).getErrorCode())
                 .isEqualTo(ErrorCode.VALIDATION_ERROR);
 
         verify(generationClient, never()).requestGeneration(any(Long.class), any());
+        // 접수가 안 됐으니 펜딩도 안 남는다
+        verify(pendingRepository, never()).insertPending(any(), any(), any(), any(), any(), any(), any());
+    }
+
+    @Test
+    @DisplayName("접수 성공 시 펜딩을 ON_DEMAND 로 기록한다 (topic·agentJobId 포함)")
+    void registersPendingAsOnDemand() {
+        when(wikiClient.getTags(28L)).thenReturn(tagsWith("SK하이닉스"));
+        when(generationClient.requestGeneration(eq(28L), any())).thenReturn("job-99");
+
+        GenerationTriggerResponse response = service.generateForUser(28L, null);
+
+        // 펜딩 행의 id = 응답 id (멱등키 파생 결정적 UUID — 프론트가 접수 응답과 목록을 매칭)
+        verify(pendingRepository).insertPending(
+                eq(java.util.UUID.fromString(response.id())),
+                eq(28L),
+                any(),
+                eq(GenerationPendingService.REPORT_TYPE_ON_DEMAND),
+                eq("SK하이닉스"),
+                eq("interest_news_card"),
+                eq("job-99"));
+    }
+
+    @Test
+    @DisplayName("펜딩 기록이 실패해도 접수 응답은 정상 반환된다 (기록 실패는 삼킴)")
+    void pendingFailureDoesNotBlockResponse() {
+        when(wikiClient.getTags(28L)).thenReturn(tagsWith("SK하이닉스"));
+        when(generationClient.requestGeneration(eq(28L), any())).thenReturn("job-99");
+        org.mockito.Mockito.doThrow(new RuntimeException("db down"))
+                .when(pendingRepository).insertPending(any(), any(), any(), any(), any(), any(), any());
+
+        GenerationTriggerResponse response = service.generateForUser(28L, null);
+
+        assertThat(response.status()).isEqualTo("accepted");
+        assertThat(response.id()).isNotBlank();
+    }
+
+    /* ===== 사용자 선택 topic 경로 (2026-08-06 최종 계약: body {topic}, 미존재 시 404 거절) ===== */
+
+    @Test
+    @DisplayName("내 관심사에 있는 topic 을 지정하면 위키 조회 없이 그 주제로 접수한다")
+    void requestedTopicUsesItDirectly() {
+        when(interestService.existsByName(28L, "양자컴퓨팅")).thenReturn(true);
+        when(generationClient.requestGeneration(eq(28L), any())).thenReturn("job-7");
+
+        GenerationTriggerResponse response = service.generateForUser(28L, "양자컴퓨팅");
+
+        assertThat(response.status()).isEqualTo("accepted");
+        // 대표 관심사 자동 선택 경로를 타지 않는다
+        verify(wikiClient, never()).getTags(any(Long.class));
+        ArgumentCaptor<GenerationRequest> captor = ArgumentCaptor.forClass(GenerationRequest.class);
+        verify(generationClient).requestGeneration(eq(28L), captor.capture());
+        assertThat(captor.getValue().topic()).isEqualTo("양자컴퓨팅");
+    }
+
+    @Test
+    @DisplayName("내 관심사에 없는 topic 은 자동 추가하지 않고 INTEREST_NOT_FOUND(404) 로 거절한다")
+    void unknownTopicRejectedWithNotFound() {
+        when(interestService.existsByName(28L, "양자컴퓨팅")).thenReturn(false);
+
+        assertThatThrownBy(() -> service.generateForUser(28L, "양자컴퓨팅"))
+                .isInstanceOf(ApiException.class)
+                .extracting(e -> ((ApiException) e).getErrorCode())
+                .isEqualTo(ErrorCode.INTEREST_NOT_FOUND);
+
+        // 무의식 추가 금지 — 관심사도 안 만들고 생성도 안 한다(여진 확정 15:51)
+        verify(interestService, never()).create(any(Long.class), any());
+        verify(generationClient, never()).requestGeneration(any(Long.class), any());
+        verify(pendingRepository, never()).insertPending(any(), any(), any(), any(), any(), any(), any());
+    }
+
+    @Test
+    @DisplayName("빈/공백 topic 은 미지정으로 보고 대표 관심사 자동 선택으로 폴백한다")
+    void blankTopicFallsBackToTopInterest() {
+        when(wikiClient.getTags(28L)).thenReturn(tagsWith("SK하이닉스"));
+        when(generationClient.requestGeneration(eq(28L), any())).thenReturn("job-1");
+
+        service.generateForUser(28L, "   ");
+
+        ArgumentCaptor<GenerationRequest> captor = ArgumentCaptor.forClass(GenerationRequest.class);
+        verify(generationClient).requestGeneration(eq(28L), captor.capture());
+        assertThat(captor.getValue().topic()).isEqualTo("SK하이닉스");
+        verify(interestService, never()).existsByName(any(Long.class), any());
     }
 }
+

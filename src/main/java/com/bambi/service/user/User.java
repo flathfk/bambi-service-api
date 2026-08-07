@@ -136,6 +136,15 @@ public class User {
         return ++this.agentContextVersion;
     }
 
+    /**
+     * agent 가 409 STALE 로 알려준 현재 버전에 맞춰 다음 버전으로 점프한다(두 카운터 정합).
+     * service 로컬 카운터와 agent 실제 버전이 어긋났을 때 재전송용으로 쓴다. {@code max} 로 역행을 막는다.
+     */
+    public int reconcileAgentContextVersion(int agentCurrentVersion) {
+        this.agentContextVersion = Math.max(this.agentContextVersion, agentCurrentVersion) + 1;
+        return this.agentContextVersion;
+    }
+
     public int getAgentContextVersion() {
         return agentContextVersion;
     }

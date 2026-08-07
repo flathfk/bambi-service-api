@@ -14,11 +14,15 @@ import java.time.OffsetDateTime;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.Mockito.doNothing;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -70,6 +74,36 @@ class AgentContextSyncServiceTest {
         assertThat(request.signupInterests().get(0).topics()).containsExactly("AI·머신러닝");
         assertThat(request.signupInterests().get(1).category()).isNull();
         assertThat(request.signupInterests().get(1).topics()).containsExactly("양자 센서 스타트업");
+    }
+
+    @Test
+    void STALE_신호를_받으면_agent_현재버전에_맞춰_한번_재전송한다() {
+        when(versionAllocator.reconcile(1L, 7)).thenReturn(8);
+        // 첫 전송은 STALE(agent 현재 7), 재전송은 성공
+        doThrow(new StaleContextVersionException(7))
+                .doNothing()
+                .when(agentGateway).syncUserContext(anyLong(), any());
+
+        service.syncUserContext(1L);
+
+        verify(versionAllocator).reconcile(1L, 7);
+        ArgumentCaptor<AgentContextRequest> captor = ArgumentCaptor.forClass(AgentContextRequest.class);
+        verify(agentGateway, times(2)).syncUserContext(anyLong(), captor.capture());
+        // 재전송은 정합된 버전(8)으로 나가야 한다
+        assertThat(captor.getAllValues().get(1).contextVersion()).isEqualTo(8);
+    }
+
+    @Test
+    void 재전송도_STALE이면_500으로_터뜨리지_않고_다음_동기화에_위임한다() {
+        when(versionAllocator.reconcile(1L, 7)).thenReturn(8);
+        // 첫 전송·재전송 둘 다 STALE(재경합) — 예외가 밖으로 새면 sync 엔드포인트가 500 이 된다
+        doThrow(new StaleContextVersionException(7))
+                .doThrow(new StaleContextVersionException(9))
+                .when(agentGateway).syncUserContext(anyLong(), any());
+
+        assertThatCode(() -> service.syncUserContext(1L)).doesNotThrowAnyException();
+
+        verify(agentGateway, times(2)).syncUserContext(anyLong(), any());
     }
 
     @Test
