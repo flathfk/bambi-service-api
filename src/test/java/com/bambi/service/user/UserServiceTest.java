@@ -4,6 +4,7 @@ import com.bambi.service.auth.dto.UserSummary;
 import com.bambi.service.common.error.ApiException;
 import com.bambi.service.common.error.ErrorCode;
 import com.bambi.service.user.dto.UpdateProfileRequest;
+import com.bambi.service.user.dto.UpdateSettingsRequest;
 import org.junit.jupiter.api.Test;
 
 import java.util.Optional;
@@ -95,5 +96,43 @@ class UserServiceTest {
 
         assertThat(result.username()).isEqualTo("parami");
         verify(userRepository, never()).existsByUsernameAndIdNot(anyString(), anyLong());
+    }
+
+    // ── 사용자 설정(V17) ─────────────────────────────────────────
+
+    @Test
+    void 설정_공개범위만_바꾸면_알림수신은_유지된다() {
+        User user = liveUser();   // 기본값: PRIVATE / 알림 true
+        when(userRepository.findById(1L)).thenReturn(Optional.of(user));
+
+        UserSummary res = service.updateSettings(1L, new UpdateSettingsRequest("PUBLIC", null));
+
+        assertThat(res.defaultCardVisibility()).isEqualTo("PUBLIC");
+        assertThat(res.reportReadyNotification()).isTrue();   // null 미전송 → 미변경
+    }
+
+    @Test
+    void 설정_알림만_끄면_공개범위는_유지된다() {
+        User user = liveUser();
+        when(userRepository.findById(1L)).thenReturn(Optional.of(user));
+
+        UserSummary res = service.updateSettings(1L, new UpdateSettingsRequest(null, false));
+
+        assertThat(res.defaultCardVisibility()).isEqualTo("PRIVATE");   // null 미전송 → 미변경
+        assertThat(res.reportReadyNotification()).isFalse();
+    }
+
+    @Test
+    void 잘못된_공개범위는_VALIDATION_ERROR_이고_아무것도_안바뀐다() {
+        User user = liveUser();
+        when(userRepository.findById(1L)).thenReturn(Optional.of(user));
+
+        ApiException ex = catchThrowableOfType(
+                () -> service.updateSettings(1L, new UpdateSettingsRequest("BOGUS", false)),
+                ApiException.class);
+
+        assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.VALIDATION_ERROR);
+        assertThat(user.getDefaultCardVisibility()).isEqualTo("PRIVATE");   // 검증 실패 → 반영 안 됨
+        assertThat(user.isReportReadyNotification()).isTrue();
     }
 }

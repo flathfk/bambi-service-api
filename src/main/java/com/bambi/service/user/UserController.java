@@ -4,8 +4,10 @@ import com.bambi.service.auth.AuthPrincipal;
 import com.bambi.service.auth.dto.UserSummary;
 import com.bambi.service.common.response.ApiResponse;
 import com.bambi.service.user.dto.UpdateProfileRequest;
+import com.bambi.service.user.dto.UpdateSettingsRequest;
 import jakarta.validation.Valid;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -29,5 +31,15 @@ public class UserController {
     public ApiResponse<UserSummary> updateMe(@AuthenticationPrincipal AuthPrincipal principal,
                                              @Valid @RequestBody UpdateProfileRequest request) {
         return ApiResponse.ok(userService.updateProfile(principal.id(), request));
+    }
+
+    /**
+     * 사용자 설정 변경(설정 화면) — 기본 카드 공개범위·리포트 완료 알림 수신. 부분 업데이트.
+     * 조회는 GET /api/auth/me 응답의 defaultCardVisibility·reportReadyNotification 로 한다.
+     */
+    @PatchMapping("/me/settings")
+    public ApiResponse<UserSummary> updateSettings(@AuthenticationPrincipal AuthPrincipal principal,
+                                                   @RequestBody UpdateSettingsRequest request) {
+        return ApiResponse.ok(userService.updateSettings(principal.id(), request));
     }
 }
