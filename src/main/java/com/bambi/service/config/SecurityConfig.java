@@ -31,7 +31,7 @@ import java.util.List;
 /**
  * 인증/인가 설정 (P0).
  * - stateless(JWT), 세션 없음
- * - /api/health, /api/version, /api/auth/signup, /api/auth/login 은 공개
+ * - 상태·로그인·OAuth protocol endpoint는 공개
  * - /api/admin/** 는 ADMIN 권한 필수, 그 외는 인증 필요
  * - 401/403 도 공통 응답 포맷(JSON)으로 내려준다
  */
@@ -62,6 +62,11 @@ public class SecurityConfig {
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers("/api/health", "/api/version", "/api/interest-taxonomy").permitAll()
                         .requestMatchers("/api/auth/signup", "/api/auth/login").permitAll()
+                        .requestMatchers("/.well-known/oauth-authorization-server").permitAll()
+                        .requestMatchers("/api/oauth/authorize", "/api/oauth/register",
+                                "/api/oauth/token", "/api/oauth/revoke").permitAll()
+                        // compose 내부에서 MCP 전용 프로세스만 호출하며 Controller가 별도 토큰을 검증한다.
+                        .requestMatchers("/internal/oauth/introspect").permitAll()
                         // 본인 전용 경로는 아래 공개 GET 목록보다 **먼저** 선언한다 —
                         // 매처는 선언 순서로 평가되므로, 뒤에 두면 `/api/reports/*` 와일드카드에
                         // 먼저 걸려 permitAll 이 된다. 그러면 인증 없이 컨트롤러까지 들어와

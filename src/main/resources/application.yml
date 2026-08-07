@@ -34,6 +34,17 @@ app:
     # 운영 환경에선 반드시 JWT_SECRET 주입 (HS256 → 최소 32바이트)
     secret: ${JWT_SECRET:dev-only-secret-change-me-please-0123456789abcdef}
     expiration-minutes: ${JWT_EXPIRATION_MINUTES:120}
+  oauth:
+    # 외부 MCP client가 discovery에서 보는 공개 Authorization Server origin.
+    issuer-url: ${OAUTH_ISSUER_URL:http://localhost}
+    # 기존 서비스 로그인을 재사용하는 Next.js 승인 화면.
+    authorization-page-url: ${OAUTH_AUTHORIZATION_PAGE_URL:http://localhost/oauth/authorize}
+    # RFC 8707 resource indicator. 공개 MCP URL과 정확히 같아야 한다.
+    resource-url: ${MCP_SERVER_URL:http://localhost/mcp}
+    authorization-request-minutes: ${OAUTH_AUTHORIZATION_REQUEST_MINUTES:10}
+    authorization-code-minutes: ${OAUTH_AUTHORIZATION_CODE_MINUTES:5}
+    access-token-minutes: ${OAUTH_ACCESS_TOKEN_MINUTES:60}
+    refresh-token-days: ${OAUTH_REFRESH_TOKEN_DAYS:30}
   admin:
     # 서버 시작 시 두 값이 모두 있으면 ADMIN 계정을 seed 한다 (없으면 skip)
     email: ${ADMIN_EMAIL:}
