@@ -2,6 +2,8 @@ package com.bambi.service.briefing;
 
 import com.bambi.service.common.error.ApiException;
 import com.bambi.service.common.error.ErrorCode;
+import com.bambi.service.interest.InterestService;
+import com.bambi.service.interest.dto.InterestResponse;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
@@ -14,6 +16,7 @@ import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 /**
@@ -25,7 +28,8 @@ import static org.mockito.Mockito.when;
 class BriefingTopicServiceTest {
 
     private final BriefingTopicRepository repository = mock(BriefingTopicRepository.class);
-    private final BriefingTopicService service = new BriefingTopicService(repository);
+    private final InterestService interestService = mock(InterestService.class);
+    private final BriefingTopicService service = new BriefingTopicService(repository, interestService);
 
     @Test
     void 선택값을_position_순서대로_이름만_돌려준다() {
@@ -128,6 +132,52 @@ class BriefingTopicServiceTest {
         // 프론트는 이 응답으로 화면 상태를 갱신하므로 보낸 값이 아니라 저장된 값이어야 한다.
         assertThat(service.replace(1L, java.util.Arrays.asList("  폭염 ", "퇴근")))
                 .containsExactly("폭염", "퇴근");
+    }
+
+    // ---- 폴백 3단계 (2026-08-08, 황유림 지적) ----------------------------------
+
+    @Test
+    void 고른_주제가_있으면_그대로_쓴다() {
+        when(repository.findByUserIdOrderByPositionAsc(1L)).thenReturn(List.of(
+                new BriefingTopic(1L, 0, "폭염"),
+                new BriefingTopic(1L, 1, "퇴근")));
+
+        assertThat(service.resolveForMorningBriefing(1L)).containsExactly("폭염", "퇴근");
+        verifyNoInteractions(interestService);   // 고른 게 있으면 폴백을 조회하지도 않는다
+    }
+
+    @Test
+    void 고른_주제가_없으면_등록_관심사로_폴백한다() {
+        // 선택 화면이 나오기 전에는 고른 사람이 아무도 없다. 폴백이 없으면 아침이 전면 중단된다.
+        when(repository.findByUserIdOrderByPositionAsc(1L)).thenReturn(List.of());
+        when(interestService.list(1L)).thenReturn(List.of(
+                interest("퇴근"), interest("기후·환경"), interest("웹툰·애니"), interest("사회·노동")));
+
+        // 최근 3개까지만 — Wiki 태그가 아니라 사용자가 직접 고른 값이라 파편이 안 섞인다.
+        assertThat(service.resolveForMorningBriefing(1L))
+                .containsExactly("퇴근", "기후·환경", "웹툰·애니");
+    }
+
+    @Test
+    void 둘_다_없으면_빈_목록이다() {
+        // 호출부가 이걸 보고 요청 자체를 건너뛴다 — 제목용 고정 문구가 검색어로 되살아나면 안 된다.
+        when(repository.findByUserIdOrderByPositionAsc(1L)).thenReturn(List.of());
+        when(interestService.list(1L)).thenReturn(List.of());
+
+        assertThat(service.resolveForMorningBriefing(1L)).isEmpty();
+    }
+
+    @Test
+    void 폴백에서_이름이_비었거나_null_인_관심사는_거른다() {
+        when(repository.findByUserIdOrderByPositionAsc(1L)).thenReturn(List.of());
+        when(interestService.list(1L)).thenReturn(java.util.Arrays.asList(
+                interest("  "), interest("폭염"), interest(null)));
+
+        assertThat(service.resolveForMorningBriefing(1L)).containsExactly("폭염");
+    }
+
+    private static InterestResponse interest(String name) {
+        return new InterestResponse(1L, name, null, null, null, null, null);
     }
 
     @SuppressWarnings("unchecked")

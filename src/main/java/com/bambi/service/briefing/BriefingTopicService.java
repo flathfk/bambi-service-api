@@ -2,6 +2,8 @@ package com.bambi.service.briefing;
 
 import com.bambi.service.common.error.ApiException;
 import com.bambi.service.common.error.ErrorCode;
+import com.bambi.service.interest.InterestService;
+import com.bambi.service.interest.dto.InterestResponse;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -29,9 +31,43 @@ public class BriefingTopicService {
     public static final int MAX_TOPIC_LENGTH = 500;
 
     private final BriefingTopicRepository repository;
+    private final InterestService interestService;
 
-    public BriefingTopicService(BriefingTopicRepository repository) {
+    public BriefingTopicService(BriefingTopicRepository repository, InterestService interestService) {
         this.repository = repository;
+        this.interestService = interestService;
+    }
+
+    /**
+     * 아침 브리핑에 실제로 보낼 주제 — <b>폴백 3단계</b> (2026-08-08, 황유림 지적으로 확정).
+     *
+     * <ol>
+     *   <li>사용자가 미리 고른 주제</li>
+     *   <li>없으면 <b>등록 관심사</b>(온보딩에서 고른 것 + 직접 추가한 것) 최근 {@value #MAX_TOPICS}개</li>
+     *   <li>그것도 없으면 빈 목록 → 호출부가 건너뛴다</li>
+     * </ol>
+     *
+     * <p><b>폴백이 없으면 아침 브리핑이 전면 중단된다.</b> 선택 화면이 나오기 전에는 고른 사람이
+     * 아무도 없고, 나온 뒤에도 설정을 안 건드린 사용자는 계속 못 받는다.
+     *
+     * <p><b>2단계에 Wiki 태그 상위 N개를 쓰지 않는다.</b> 저장한 글에서 뽑힌 파편이 상위를
+     * 차지하기 때문이다(agent-api #21 — 폭염 기사 1건으로 관심사 상위가 `서울`·`온열질환`·
+     * `질병관리청`이 되고 아침 브리핑이 `서울` 로 나갔다). 아침은 사용자가 결과를 검토하지 않고
+     * 그냥 받는 경로라 파편이 가장 위험한 자리다. 등록 관심사는 사용자가 직접 고른 값이라
+     * 파편이 섞이지 않는다. (08-08 배포된 파편 필터는 기존 Wiki 에 아직 적용되지 않아
+     * 재빌드 전까지 이 판단은 그대로 유효하다.)
+     */
+    @Transactional(readOnly = true)
+    public List<String> resolveForMorningBriefing(Long userId) {
+        List<String> selected = get(userId);
+        if (!selected.isEmpty()) {
+            return selected;
+        }
+        return interestService.list(userId).stream()
+                .map(InterestResponse::name)
+                .filter(name -> name != null && !name.isBlank())
+                .limit(MAX_TOPICS)
+                .toList();
     }
 
     /** 내 선택값 — 미선택이면 빈 목록(404 아님). 화면 진입 시 이 값으로 선택 상태를 복구한다. */

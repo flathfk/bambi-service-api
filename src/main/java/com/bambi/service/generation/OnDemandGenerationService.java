@@ -74,8 +74,10 @@ public class OnDemandGenerationService {
     public GenerationTriggerResponse generateForUser(long userId, String requestedTopic) {
         String topic = resolveTopic(userId, requestedTopic);
         // report_type 을 요청에 실어 agent 가 발행 snapshot 에 에코하게 한다(2026-08-06 계약).
-        GenerationRequest request = new GenerationRequest(
-                onDemandKey(userId), topic, contentType, null, null,
+        // 온디맨드는 아직 단일 주제다 — topic 이 실제 검색어다(고정 문구를 넣으면 안 된다).
+        // 상위 3개 자동 선정 + 연결 분석 전환은 agent 통합 서술이 나온 뒤 별도 작업.
+        GenerationRequest request = GenerationRequest.singleTopic(
+                onDemandKey(userId), topic, contentType,
                 GenerationPendingService.REPORT_TYPE_ON_DEMAND);
         // agent 202 body 파싱 실패 시 null 일 수 있어 키로 쓰지 않는다 — 참고용으로만 내린다.
         String agentJobId = generationClient.requestGeneration(userId, request);
