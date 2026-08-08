@@ -1,6 +1,7 @@
 package com.bambi.service.auth;
 
 import com.bambi.service.auth.dto.AuthResponse;
+import com.bambi.service.auth.dto.ChangePasswordRequest;
 import com.bambi.service.auth.dto.LoginRequest;
 import com.bambi.service.auth.dto.SignupRequest;
 import com.bambi.service.auth.dto.UserSummary;
@@ -42,5 +43,17 @@ public class AuthController {
     @GetMapping("/me")
     public ApiResponse<UserSummary> me(@AuthenticationPrincipal AuthPrincipal principal) {
         return ApiResponse.ok(authService.me(principal.id()));
+    }
+
+    /**
+     * 비밀번호 변경 (로그인 필요). 현재 비밀번호 확인 후 교체.
+     * 현재 비밀번호 불일치 → 401, 새 비밀번호 정책 위반(@Valid) → 400.
+     * ⚠️ stateless JWT 라 변경 후에도 기존 토큰은 만료까지 유효하다.
+     */
+    @PostMapping("/password")
+    public ApiResponse<Void> changePassword(@AuthenticationPrincipal AuthPrincipal principal,
+                                            @Valid @RequestBody ChangePasswordRequest request) {
+        authService.changePassword(principal.id(), request);
+        return ApiResponse.ok();
     }
 }

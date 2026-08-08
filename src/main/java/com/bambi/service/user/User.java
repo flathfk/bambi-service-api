@@ -129,6 +129,14 @@ public class User {
     }
 
     /**
+     * 비밀번호 변경 — 새 해시로 교체(현재 비밀번호 검증은 서비스 책임).
+     * ⚠️ stateless JWT 라 변경 후에도 기존 토큰은 만료까지 유효하다(무효화 수단 없음 — tokenVersion 범위 밖).
+     */
+    public void changePassword(String newPasswordHash) {
+        this.passwordHash = newPasswordHash;
+    }
+
+    /**
      * agent 컨텍스트 동기화 버전을 하나 올리고(단조 증가) 새 값을 반환한다.
      * 동기화 직전에 호출해 이 값을 {@code context_version} 으로 보낸다(계약 §4.3).
      */

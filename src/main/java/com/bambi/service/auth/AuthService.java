@@ -1,6 +1,7 @@
 package com.bambi.service.auth;
 
 import com.bambi.service.auth.dto.AuthResponse;
+import com.bambi.service.auth.dto.ChangePasswordRequest;
 import com.bambi.service.auth.dto.LoginRequest;
 import com.bambi.service.auth.dto.SignupRequest;
 import com.bambi.service.auth.dto.UserSummary;
@@ -82,5 +83,21 @@ public class AuthService {
                 .filter(u -> u.getDeletedAt() == null)
                 .orElseThrow(() -> new ApiException(ErrorCode.AUTH_INVALID_TOKEN));
         return UserSummary.from(user);
+    }
+
+    /**
+     * 비밀번호 변경. 현재 비밀번호가 맞아야 하고(불일치 401), 새 비밀번호 정책(8~100자)은
+     * 컨트롤러 @Valid 가 400 으로 막는다(여기 도달 시엔 이미 형식 통과).
+     * ⚠️ stateless JWT 라 변경 후에도 기존 토큰은 만료까지 유효하다(강제 재로그인은 tokenVersion 필요 — 범위 밖).
+     */
+    @Transactional
+    public void changePassword(Long userId, ChangePasswordRequest req) {
+        User user = userRepository.findById(userId)
+                .filter(u -> u.getDeletedAt() == null)
+                .orElseThrow(() -> new ApiException(ErrorCode.AUTH_INVALID_TOKEN));
+        if (!passwordEncoder.matches(req.currentPassword(), user.getPasswordHash())) {
+            throw new ApiException(ErrorCode.AUTH_INVALID_CREDENTIALS, "현재 비밀번호가 올바르지 않습니다.");
+        }
+        user.changePassword(passwordEncoder.encode(req.newPassword()));   // dirty checking 으로 flush
     }
 }
