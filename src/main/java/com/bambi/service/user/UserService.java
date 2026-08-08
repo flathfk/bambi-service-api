@@ -4,6 +4,7 @@ import com.bambi.service.auth.dto.UserSummary;
 import com.bambi.service.common.error.ApiException;
 import com.bambi.service.common.error.ErrorCode;
 import com.bambi.service.user.dto.UpdateProfileRequest;
+import com.bambi.service.user.dto.UpdateSettingsRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -44,6 +45,28 @@ public class UserService {
             }
             user.changeUsername(username);
         }
+        return UserSummary.from(user);
+    }
+
+    private static final String PRIVATE = "PRIVATE";
+    private static final String PUBLIC = "PUBLIC";
+
+    /**
+     * 사용자 설정 변경(PATCH) — 부분 업데이트. null 항목은 미변경.
+     * defaultCardVisibility 는 PRIVATE/PUBLIC 만 허용(그 외 400). 변경된 전체 요약을 돌려준다.
+     */
+    @Transactional
+    public UserSummary updateSettings(Long userId, UpdateSettingsRequest req) {
+        User user = userRepository.findById(userId)
+                .filter(u -> u.getDeletedAt() == null)
+                .orElseThrow(() -> new ApiException(ErrorCode.AUTH_INVALID_TOKEN));
+
+        String visibility = req.defaultCardVisibility();
+        if (visibility != null && !PRIVATE.equals(visibility) && !PUBLIC.equals(visibility)) {
+            throw new ApiException(ErrorCode.VALIDATION_ERROR,
+                    "기본 공개범위는 PRIVATE 또는 PUBLIC 이어야 합니다.");
+        }
+        user.updateSettings(visibility, req.reportReadyNotification());
         return UserSummary.from(user);
     }
 

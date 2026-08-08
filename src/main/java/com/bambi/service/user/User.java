@@ -51,6 +51,15 @@ public class User {
     @Column(length = 300)
     private String bio;
 
+    // 사용자 설정(V17). 카드 발행 시 적용될 기본 공개범위 — 초기값은 DB DEFAULT 'PRIVATE' 와 일치시켜
+    // JPA insert 가 NULL/기본값으로 DEFAULT 를 덮어쓰지 않게 한다.
+    @Column(name = "default_card_visibility", length = 20, nullable = false)
+    private String defaultCardVisibility = "PRIVATE";
+
+    // 리포트 완료(REPORT_READY) 알림 수신 여부 — 초기값 true 는 DB DEFAULT TRUE 와 일치.
+    @Column(name = "report_ready_notification", nullable = false)
+    private boolean reportReadyNotification = true;
+
     @CreationTimestamp
     @Column(name = "created_at", nullable = false, updatable = false)
     private OffsetDateTime createdAt;
@@ -114,6 +123,14 @@ public class User {
         return bio;
     }
 
+    public String getDefaultCardVisibility() {
+        return defaultCardVisibility;
+    }
+
+    public boolean isReportReadyNotification() {
+        return reportReadyNotification;
+    }
+
     /**
      * 프로필 편집(PUT /api/users/me). username 유일성 검증은 서비스 책임 —
      * 여기서는 값 반영만 한다. null username 은 "핸들 미설정 유지"가 아니라
@@ -134,6 +151,19 @@ public class User {
      */
     public void changePassword(String newPasswordHash) {
         this.passwordHash = newPasswordHash;
+    }
+
+    /**
+     * 사용자 설정 부분 변경(PATCH) — null 인 항목은 변경하지 않는다.
+     * defaultCardVisibility 값 검증(PRIVATE/PUBLIC)은 서비스 책임.
+     */
+    public void updateSettings(String defaultCardVisibility, Boolean reportReadyNotification) {
+        if (defaultCardVisibility != null) {
+            this.defaultCardVisibility = defaultCardVisibility;
+        }
+        if (reportReadyNotification != null) {
+            this.reportReadyNotification = reportReadyNotification;
+        }
     }
 
     /**
