@@ -54,8 +54,8 @@ class RestClientGenerationClientTest {
                         .body("{\"job_id\":\"job-1\",\"status\":\"queued\"}")
                         .contentType(MediaType.APPLICATION_JSON));
 
-        GenerationRequest request = new GenerationRequest(
-                "2026-08-04-23-interest_news_card", "오늘의 관심사 뉴스", "interest_news_card", null, null, "MORNING_BRIEFING");
+        GenerationRequest request = GenerationRequest.singleTopic(
+                "2026-08-04-23-interest_news_card", "오늘의 관심사 뉴스", "interest_news_card", "MORNING_BRIEFING");
 
         String jobId = client.requestGeneration(23L, request);
 
@@ -71,8 +71,8 @@ class RestClientGenerationClientTest {
                         .body("{\"code\":\"USER_CONTEXT_REQUIRED\"}")
                         .contentType(MediaType.APPLICATION_JSON));
 
-        GenerationRequest request = new GenerationRequest(
-                "2026-08-04-9-interest_news_card", "오늘의 관심사 뉴스", "interest_news_card", null, null, "MORNING_BRIEFING");
+        GenerationRequest request = GenerationRequest.singleTopic(
+                "2026-08-04-9-interest_news_card", "오늘의 관심사 뉴스", "interest_news_card", "MORNING_BRIEFING");
 
         assertThatThrownBy(() -> client.requestGeneration(9L, request))
                 .isInstanceOf(ApiException.class)
@@ -86,8 +86,8 @@ class RestClientGenerationClientTest {
         server.expect(requestTo("http://agent.local/internal/v1/users/1/generations"))
                 .andRespond(withStatus(HttpStatus.SERVICE_UNAVAILABLE));
 
-        GenerationRequest request = new GenerationRequest(
-                "2026-08-04-1-interest_news_card", "오늘의 관심사 뉴스", "interest_news_card", null, null, "MORNING_BRIEFING");
+        GenerationRequest request = GenerationRequest.singleTopic(
+                "2026-08-04-1-interest_news_card", "오늘의 관심사 뉴스", "interest_news_card", "MORNING_BRIEFING");
 
         assertThatThrownBy(() -> client.requestGeneration(1L, request))
                 .isInstanceOf(ApiException.class)

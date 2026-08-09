@@ -1,8 +1,8 @@
 package com.bambi.service.generation;
 
+import com.bambi.service.briefing.BriefingTopicService;
 import com.bambi.service.generation.dto.GenerationRequest;
 import com.bambi.service.user.UserRepository;
-import com.bambi.service.wiki.AgentWikiClient;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -35,21 +35,28 @@ public class GenerationScheduler {
     private static final Logger log = LoggerFactory.getLogger(GenerationScheduler.class);
     private static final ZoneId KST = ZoneId.of("Asia/Seoul");
 
+    /**
+     * 카드 제목용 고정 문구 (2026-08-07 계약). {@code topics} 를 함께 보낼 때만 쓴다 —
+     * {@code topics} 가 비면 이 문구가 <b>실제 검색어로 되살아나</b> 엉뚱한 기사를 물어온다
+     * (2026-08-05 유림 확인). 그래서 아래 루프가 빈 목록을 먼저 걸러낸다.
+     */
+    static final String TITLE_TOPIC = "오늘의 관심사 브리핑";
+
     private final GenerationClient generationClient;
     private final UserRepository userRepository;
-    private final AgentWikiClient wikiClient;
+    private final BriefingTopicService briefingTopicService;
     private final GenerationPendingService pendingService;
     private final String contentType;
 
     public GenerationScheduler(
             GenerationClient generationClient,
             UserRepository userRepository,
-            AgentWikiClient wikiClient,
+            BriefingTopicService briefingTopicService,
             GenerationPendingService pendingService,
             @Value("${app.scheduler.generation.content-type:interest_news_card}") String contentType) {
         this.generationClient = generationClient;
         this.userRepository = userRepository;
-        this.wikiClient = wikiClient;
+        this.briefingTopicService = briefingTopicService;
         this.pendingService = pendingService;
         this.contentType = contentType;
     }
@@ -65,32 +72,36 @@ public class GenerationScheduler {
         int skipped = 0;
         for (Long userId : userIds) {
             try {
-                // 검색 주제 = 사용자 대표 관심사(위키 태그 score 최고). topic 은 라벨이 아니라 실제 검색어라
-                // 고정 문구를 쓰면 엉뚱한 기사를 물어온다(유림 확인 08-05). 관심사 없으면 생성할 게 없어 건너뛴다.
-                String topic = wikiClient.getTags(userId).topTopic().orElse(null);
-                if (topic == null) {
+                // 본문 주제 = 사용자가 미리 고른 것 → 없으면 등록 관심사(폴백 3단계, agent-api #20).
+                List<String> topics = briefingTopicService.resolveForMorningBriefing(userId);
+                if (topics.isEmpty()) {
+                    // 🚨 여기서 안 걸르면 TITLE_TOPIC 고정 문구가 실제 검색어로 되살아나
+                    // 엉뚱한 기사를 물어온다(유림 확인 08-05). 보낼 주제가 없으면 안 보낸다.
                     skipped++;
                     continue;
                 }
-                GenerationRequest request = new GenerationRequest(
+                GenerationRequest request = GenerationRequest.multiTopic(
                         idempotencyKey(window, userId, contentType),
-                        topic,
+                        TITLE_TOPIC,   // topics 가 있으면 topic 은 검색어가 아니라 카드 제목용이다
+                        topics,
                         contentType,
-                        null,   // language — 컨텍스트 선호 언어 사용
-                        null,   // scheduled_at — 정시 호출이라 즉시 실행(예약 필요 시 +09:00 포함해 지정)
                         GenerationPendingService.REPORT_TYPE_MORNING_BRIEFING);  // agent 가 snapshot 에 에코
                 String agentJobId = generationClient.requestGeneration(userId, request);
                 // 접수 성공 후 펜딩 영속화(MORNING_BRIEFING) — 온디맨드와 같은 결정적 id 규칙.
                 // 재실행·재시도는 같은 멱등키 → 같은 id 라 중복 행이 생기지 않는다.
+                //
+                // ⚠️ 슬롯 제목은 TITLE_TOPIC 이 아니라 topics[0] 이다. 고정 문구를 저장하면
+                // 모든 사용자의 "처리중" 슬롯이 같은 문구가 되어 무엇을 만드는 중인지 안 보인다.
                 pendingService.register(userId, request.idempotencyKey(),
-                        GenerationPendingService.REPORT_TYPE_MORNING_BRIEFING, topic, contentType, agentJobId);
+                        GenerationPendingService.REPORT_TYPE_MORNING_BRIEFING,
+                        topics.get(0), contentType, agentJobId);
                 requested++;
             } catch (Exception e) {
                 // agent 다운/일부 실패는 전체를 막지 않는다(컨텍스트 동기화 패턴과 동일).
                 log.warn("[GenerationScheduler] 사용자 생성 요청 실패 userId={} — 건너뜀", userId, e);
             }
         }
-        log.info("[GenerationScheduler] 생성 트리거 완료 요청={}/{} (관심사없음 건너뜀={})",
+        log.info("[GenerationScheduler] 생성 트리거 완료 요청={}/{} (보낼 주제 없어 건너뜀={})",
                 requested, userIds.size(), skipped);
     }
 
