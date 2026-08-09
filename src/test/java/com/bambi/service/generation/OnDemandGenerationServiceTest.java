@@ -194,5 +194,68 @@ class OnDemandGenerationServiceTest {
         assertThat(captor.getValue().topic()).isEqualTo("SK하이닉스");
         verify(interestService, never()).existsByName(any(Long.class), any());
     }
+
+    // ---------- 변경점(Delta) 추적 — agent-api #12 김기용 ----------
+
+    private GenerationRequest capture() {
+        ArgumentCaptor<GenerationRequest> captor = ArgumentCaptor.forClass(GenerationRequest.class);
+        verify(generationClient).requestGeneration(eq(28L), captor.capture());
+        return captor.getValue();
+    }
+
+    @Test
+    @DisplayName("Delta 를 켜면 change_history_enabled 를 실어 보낸다")
+    void deltaOnSendsFlag() {
+        when(wikiClient.getTags(28L)).thenReturn(tagsWith("SK하이닉스"));
+        when(generationClient.requestGeneration(eq(28L), any())).thenReturn("job-1");
+
+        service.generateForUser(28L, null, true);
+
+        assertThat(capture().changeHistoryEnabled()).isTrue();
+    }
+
+    @Test
+    @DisplayName("Delta 를 끄면 플래그를 아예 싣지 않는다 — 기존 요청과 동일")
+    void deltaOffOmitsFlag() {
+        when(wikiClient.getTags(28L)).thenReturn(tagsWith("SK하이닉스"));
+        when(generationClient.requestGeneration(eq(28L), any())).thenReturn("job-1");
+
+        service.generateForUser(28L, null, false);
+
+        assertThat(capture().changeHistoryEnabled()).isNull();
+    }
+
+    @Test
+    @DisplayName("인자 2개짜리 기존 호출은 Delta 가 꺼진 채로 동작한다(회귀 방지)")
+    void legacyOverloadKeepsDeltaOff() {
+        when(wikiClient.getTags(28L)).thenReturn(tagsWith("SK하이닉스"));
+        when(generationClient.requestGeneration(eq(28L), any())).thenReturn("job-1");
+
+        service.generateForUser(28L, null);
+
+        GenerationRequest sent = capture();
+        assertThat(sent.changeHistoryEnabled()).isNull();
+        // 키에 접미사가 붙으면 기존 펜딩 id 파생이 달라진다 — 붙지 않아야 한다.
+        assertThat(sent.idempotencyKey()).doesNotEndWith("-delta");
+    }
+
+    @Test
+    @DisplayName("같은 분에 토글해도 멱등키가 갈려 각각 새 Job 이 된다")
+    void deltaGetsItsOwnIdempotencyKey() {
+        when(wikiClient.getTags(28L)).thenReturn(tagsWith("SK하이닉스"));
+        when(generationClient.requestGeneration(eq(28L), any())).thenReturn("job-1");
+
+        service.generateForUser(28L, null, false);
+        service.generateForUser(28L, null, true);
+
+        ArgumentCaptor<GenerationRequest> captor = ArgumentCaptor.forClass(GenerationRequest.class);
+        verify(generationClient, org.mockito.Mockito.times(2))
+                .requestGeneration(eq(28L), captor.capture());
+        List<GenerationRequest> sent = captor.getAllValues();
+        // 키가 같으면 agent 가 먼저 접수한 Job 을 돌려줘 "켰는데 안 바뀐다"가 된다.
+        assertThat(sent.get(0).idempotencyKey()).isNotEqualTo(sent.get(1).idempotencyKey());
+        assertThat(sent.get(0).idempotencyKey()).doesNotEndWith("-delta");
+        assertThat(sent.get(1).idempotencyKey()).endsWith("-delta");
+    }
 }
 

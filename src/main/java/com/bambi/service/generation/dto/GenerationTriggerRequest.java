@@ -11,7 +11,8 @@ import jakarta.validation.constraints.Size;
  * 자동 선택한다(하위호환). topic 이 오면 서버가 관심사 원자 처리(없으면 USER 로 추가) 후 생성한다.
  */
 public record GenerationTriggerRequest(
-        @Size(max = 100) String topic) {
+        @Size(max = 100) String topic,
+        Boolean changeHistoryEnabled) {
 
     /** 정규화된 topic — 앞뒤 공백 제거, 비어 있으면 null(대표 관심사 자동 선택 신호). */
     public String normalizedTopic() {
@@ -19,5 +20,13 @@ public record GenerationTriggerRequest(
             return null;
         }
         return topic.strip();
+    }
+
+    /**
+     * 변경점(Delta) 추적 요청 여부 (agent-api #12 김기용). 생략하면 꺼짐 —
+     * <b>기존 호출자는 이 필드를 모르므로 기본이 꺼짐이어야 동작이 안 바뀐다.</b>
+     */
+    public boolean wantsChangeHistory() {
+        return Boolean.TRUE.equals(changeHistoryEnabled);
     }
 }

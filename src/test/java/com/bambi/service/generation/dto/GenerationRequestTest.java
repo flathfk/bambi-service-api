@@ -30,6 +30,49 @@ class GenerationRequestTest {
         assertThat(json).contains("\"topic\":\"폭염\"");
     }
 
+    // ---------- 변경점(Delta) 추적 — agent-api #12 김기용 ----------
+
+    @Test
+    void Delta_를_끄면_필드_자체를_보내지_않는다() throws Exception {
+        // agent 기본값이 false 라 false 를 실어도 결과는 같지만, 아예 빼야 기존 요청 본문과
+        // 동일해진다 — 이 변경이 기존 온디맨드에 영향이 없다는 것이 본문으로 증명된다.
+        GenerationRequest request = GenerationRequest.singleTopic(
+                "key-1", "폭염", "interest_news_card", "ON_DEMAND", false);
+
+        assertThat(mapper.writeValueAsString(request)).doesNotContain("change_history_enabled");
+    }
+
+    @Test
+    void Delta_를_켜면_snake_case_로_실어_보낸다() throws Exception {
+        GenerationRequest request = GenerationRequest.singleTopic(
+                "key-1", "폭염", "interest_news_card", "ON_DEMAND", true);
+
+        assertThat(mapper.writeValueAsString(request))
+                .contains("\"change_history_enabled\":true");
+    }
+
+    @Test
+    void 인자_없는_기존_팩토리는_Delta_가_꺼진_것과_같다() throws Exception {
+        // 기존 호출부(스케줄러·온디맨드)가 그대로 동작해야 한다.
+        String legacy = mapper.writeValueAsString(GenerationRequest.singleTopic(
+                "key-1", "폭염", "interest_news_card", "ON_DEMAND"));
+        String explicitOff = mapper.writeValueAsString(GenerationRequest.singleTopic(
+                "key-1", "폭염", "interest_news_card", "ON_DEMAND", false));
+
+        assertThat(legacy).isEqualTo(explicitOff);
+    }
+
+    @Test
+    void 아침_브리핑은_Delta_를_켜지_않는다() throws Exception {
+        // 둘 다 "기존 생성 경로를 대체"라 동시에 켜면 어느 쪽이 이기는지 계약에 정의가 없다.
+        GenerationRequest request = GenerationRequest.multiTopic(
+                "key-1", "오늘의 관심사 브리핑", List.of("폭염", "퇴근"),
+                "interest_news_card", "MORNING_BRIEFING");
+
+        assertThat(request.changeHistoryEnabled()).isNull();
+        assertThat(mapper.writeValueAsString(request)).doesNotContain("change_history_enabled");
+    }
+
     @Test
     void 여러_주제는_topic_과_topics_를_함께_보낸다() throws Exception {
         GenerationRequest request = GenerationRequest.multiTopic(
