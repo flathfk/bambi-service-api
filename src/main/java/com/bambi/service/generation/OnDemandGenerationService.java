@@ -72,19 +72,36 @@ public class OnDemandGenerationService {
      * <p>응답 키 id 는 service 발급이라 항상 보장, agentJobId 는 agent 식별자(파싱 실패 시 null 가능).
      */
     public GenerationTriggerResponse generateForUser(long userId, String requestedTopic) {
+        return generateForUser(userId, requestedTopic, false);
+    }
+
+    /**
+     * 변경점(Delta) 추적을 선택할 수 있는 즉시 생성 (agent-api #12 김기용).
+     *
+     * <p>{@code changeHistory} 를 켜면 agent 가 <b>직전 보고서 이후의 신규·갱신 사실만 갈라</b>
+     * 통합 보고서를 만든다. 끄면 지금까지와 완전히 동일하게 동작한다 — 요청 본문에서
+     * 필드 자체가 빠지므로 회귀가 없다.
+     *
+     * <p><b>아침 브리핑에는 쓰지 않는다.</b> Delta 도 "기존 생성 경로를 대체"라서, 같은 성격의
+     * {@code topics[]}(2026-08-07 계약)와 동시에 켜면 어느 쪽이 이기는지 계약에 정의가 없다.
+     */
+    public GenerationTriggerResponse generateForUser(long userId, String requestedTopic,
+                                                     boolean changeHistory) {
         String topic = resolveTopic(userId, requestedTopic);
         // report_type 을 요청에 실어 agent 가 발행 snapshot 에 에코하게 한다(2026-08-06 계약).
-        GenerationRequest request = new GenerationRequest(
-                onDemandKey(userId), topic, contentType, null, null,
-                GenerationPendingService.REPORT_TYPE_ON_DEMAND);
+        // 온디맨드는 아직 단일 주제다 — topic 이 실제 검색어다(고정 문구를 넣으면 안 된다).
+        // 상위 3개 자동 선정 + 연결 분석 전환은 agent 통합 서술이 나온 뒤 별도 작업.
+        GenerationRequest request = GenerationRequest.singleTopic(
+                onDemandKey(userId, changeHistory), topic, contentType,
+                GenerationPendingService.REPORT_TYPE_ON_DEMAND, changeHistory);
         // agent 202 body 파싱 실패 시 null 일 수 있어 키로 쓰지 않는다 — 참고용으로만 내린다.
         String agentJobId = generationClient.requestGeneration(userId, request);
         // 접수 성공 후 펜딩 영속화(ON_DEMAND) — id 는 멱등키 파생이라 트리거 응답과 같은 값.
         // 기록 실패는 삼켜져 접수 응답을 막지 않는다(register 내부 정책).
         String id = pendingService.register(userId, request.idempotencyKey(),
                 GenerationPendingService.REPORT_TYPE_ON_DEMAND, topic, contentType, agentJobId);
-        log.info("[OnDemandGeneration] 즉시 생성 요청 userId={}, topic={}, idempotencyKey={}, id={}, agentJobId={}",
-                userId, topic, request.idempotencyKey(), id, agentJobId);
+        log.info("[OnDemandGeneration] 즉시 생성 요청 userId={}, topic={}, delta={}, idempotencyKey={}, id={}, agentJobId={}",
+                userId, topic, changeHistory, request.idempotencyKey(), id, agentJobId);
         return GenerationTriggerResponse.accepted(id, agentJobId);
     }
 
@@ -109,9 +126,16 @@ public class OnDemandGenerationService {
                 .orElseThrow(() -> new ApiException(ErrorCode.VALIDATION_ERROR, "생성할 관심사가 없습니다."));
     }
 
-    /** on-demand 멱등키(분 단위) — 연타는 1건, 시간 지나면 새 생성. */
-    private String onDemandKey(long userId) {
+    /**
+     * on-demand 멱등키(분 단위) — 연타는 1건, 시간 지나면 새 생성.
+     *
+     * <p>Delta 여부를 키에 섞는다. 안 섞으면 같은 분 안에서 토글해도 <b>멱등키가 같아
+     * agent 가 먼저 접수한 Job 을 그대로 돌려주고</b>, 사용자는 "켰는데 안 바뀐다"를 겪는다.
+     * 꺼진 경우에는 접미사를 붙이지 않아 <b>기존 키 형식이 그대로 유지</b>된다(회귀 없음).
+     */
+    private String onDemandKey(long userId, boolean changeHistory) {
         long minute = OffsetDateTime.now(KST).truncatedTo(ChronoUnit.MINUTES).toEpochSecond();
-        return "ondemand-" + userId + "-" + contentType + "-" + minute;
+        String base = "ondemand-" + userId + "-" + contentType + "-" + minute;
+        return changeHistory ? base + "-delta" : base;
     }
 }

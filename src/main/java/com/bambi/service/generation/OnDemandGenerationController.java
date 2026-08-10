@@ -39,6 +39,9 @@ public class OnDemandGenerationController {
      * 비동기 접수라 202 Accepted. body 는 job_id 를 담아 펜딩 UI 가 상태를 추적하게 한다.
      * 요청 body 는 optional — {@code {topic}} 이 오면 사용자 선택 주제(관심사 원자 반영),
      * 없으면 기존처럼 대표 관심사 자동(하위호환, 2026-08-06 계약).
+     *
+     * <p>{@code changeHistoryEnabled: true} 를 함께 보내면 변경점(Delta) 추적 보고서로 만든다
+     * (agent-api #12 김기용). 생략하면 꺼짐이라 <b>기존 호출자의 동작은 바뀌지 않는다.</b>
      */
     @PostMapping("/generate")
     @ResponseStatus(HttpStatus.ACCEPTED)
@@ -46,7 +49,9 @@ public class OnDemandGenerationController {
             @AuthenticationPrincipal AuthPrincipal principal,
             @RequestBody(required = false) @Valid GenerationTriggerRequest request) {
         String topic = request != null ? request.normalizedTopic() : null;
-        return ApiResponse.ok(onDemandGenerationService.generateForUser(principal.id(), topic));
+        boolean changeHistory = request != null && request.wantsChangeHistory();
+        return ApiResponse.ok(
+                onDemandGenerationService.generateForUser(principal.id(), topic, changeHistory));
     }
 
     /**

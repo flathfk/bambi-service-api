@@ -146,6 +146,14 @@ public class User {
     }
 
     /**
+     * 비밀번호 변경 — 새 해시로 교체(현재 비밀번호 검증은 서비스 책임).
+     * ⚠️ stateless JWT 라 변경 후에도 기존 토큰은 만료까지 유효하다(무효화 수단 없음 — tokenVersion 범위 밖).
+     */
+    public void changePassword(String newPasswordHash) {
+        this.passwordHash = newPasswordHash;
+    }
+
+    /**
      * 사용자 설정 부분 변경(PATCH) — null 인 항목은 변경하지 않는다.
      * defaultCardVisibility 값 검증(PRIVATE/PUBLIC)은 서비스 책임.
      */
