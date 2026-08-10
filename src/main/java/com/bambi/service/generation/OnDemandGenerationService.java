@@ -80,7 +80,7 @@ public class OnDemandGenerationService {
     public GenerationTriggerResponse generateForUser(long userId, String requestedTopic) {
         String topic = resolveTopic(userId, requestedTopic);
         // 변경점(Delta) 추적은 요청 단위 토글이 아니라 **계정 설정**이다(2026-08-10 김기용 요청,
-        // users.change_history_enabled V21). 어떤 주제를 요청하든 저장된 설정값을 그대로 싣는다 —
+        // users.change_history_enabled V22). 어떤 주제를 요청하든 저장된 설정값을 그대로 싣는다 —
         // 처음 요청하는 주제는 비교할 과거가 없어 "전부 신규"로 나오고 두 번째부터 전/후 비교가 된다
         // (토픽별 과거 누적 구조라 계정 단위로 켜도 데이터가 안 꼬인다 — 기용 확인).
         //
