@@ -1,6 +1,7 @@
 package com.bambi.service.agent;
 
 import com.bambi.service.agent.dto.AgentClippingRequest;
+import com.bambi.service.agent.dto.AgentAcceptedJob;
 import com.bambi.service.agent.dto.AgentContextRequest;
 import com.bambi.service.agent.dto.AgentInterestTaxonomyRequest;
 import com.bambi.service.agent.dto.AgentUrlSourceRequest;
@@ -143,9 +144,11 @@ class RestClientAgentGatewayTest {
                         .body("{\"job_id\":\"j-1\",\"status\":\"queued\"}")
                         .contentType(MediaType.APPLICATION_JSON));
 
-        gateway.relayClipping(7, AgentClippingRequest.of("bookmark-42", "https://ex.com/a", "제목", "본문"));
+        AgentAcceptedJob accepted = gateway.relayClipping(
+                7, AgentClippingRequest.of("bookmark-42", "https://ex.com/a", "제목", "본문"));
 
         server.verify();
+        assertThat(accepted.jobId()).isEqualTo("j-1");
         verify(callLogger).logRequest(eq(7L), eq("/internal/v1/users/7/wiki-sources/clippings"), any());
         verify(callLogger).logResponse(eq(1L), eq(202), anyInt(), any());
     }
@@ -174,9 +177,11 @@ class RestClientAgentGatewayTest {
                         .body("{\"job_id\":\"j-2\",\"status\":\"queued\"}")
                         .contentType(MediaType.APPLICATION_JSON));
 
-        gateway.relayUrlSource(7, AgentUrlSourceRequest.of("bookmark-42", "https://ex.com/a"));
+        AgentAcceptedJob accepted = gateway.relayUrlSource(
+                7, AgentUrlSourceRequest.of("bookmark-42", "https://ex.com/a"));
 
         server.verify();
+        assertThat(accepted.jobId()).isEqualTo("j-2");
         verify(callLogger).logRequest(eq(7L), eq("/internal/v1/users/7/wiki-sources/urls"), any());
         verify(callLogger).logResponse(eq(1L), eq(202), anyInt(), any());
     }

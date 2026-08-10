@@ -38,7 +38,40 @@ public interface GenerationPendingRepository extends JpaRepository<GenerationPen
             @Param("contentType") String contentType,
             @Param("agentJobId") String agentJobId);
 
-    /** 본인 것만, 지정 시각 이후 접수된 PENDING 을 최신순으로 — 처리중 슬롯 노출용. */
-    List<GenerationPending> findByUserIdAndStatusAndCreatedAtAfterOrderByCreatedAtDesc(
-            Long userId, String status, OffsetDateTime after);
+    List<GenerationPending> findByUserIdAndCreatedAtAfterOrderByCreatedAtDesc(
+            Long userId, OffsetDateTime after);
+
+    List<GenerationPending> findByUserIdAndStatusInAndCreatedAtAfterOrderByCreatedAtDesc(
+            Long userId, List<String> statuses, OffsetDateTime after);
+
+    @Query(value = """
+            SELECT * FROM service.generation_pendings
+            WHERE status IN ('PENDING', 'RUNNING')
+              AND agent_job_id IS NOT NULL
+            ORDER BY created_at
+            LIMIT :limit
+            """, nativeQuery = true)
+    List<GenerationPending> findPollable(@Param("limit") int limit);
+
+    @Transactional
+    @Modifying
+    @Query(value = """
+            UPDATE service.generation_pendings
+            SET status = :status, error_code = :errorCode, updated_at = now(),
+                completed_at = CASE WHEN :status IN ('FAILED', 'CANCELLED') THEN now() ELSE NULL END
+            WHERE id = :id
+            """, nativeQuery = true)
+    void updateStatus(@Param("id") UUID id, @Param("status") String status,
+                      @Param("errorCode") String errorCode);
+
+    @Transactional
+    @Modifying
+    @Query(value = """
+            UPDATE service.generation_pendings
+            SET status = 'COMPLETED', error_code = NULL, updated_at = now(), completed_at = now()
+            WHERE user_id = :userId AND idempotency_key = :idempotencyKey
+              AND status <> 'COMPLETED'
+            """, nativeQuery = true)
+    int markCompleted(@Param("userId") Long userId,
+                      @Param("idempotencyKey") String idempotencyKey);
 }

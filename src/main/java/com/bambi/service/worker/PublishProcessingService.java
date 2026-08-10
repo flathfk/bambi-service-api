@@ -3,6 +3,7 @@ package com.bambi.service.worker;
 import com.bambi.service.agent.publish.dto.PublishItem;
 import com.bambi.service.card.Card;
 import com.bambi.service.card.CardRepository;
+import com.bambi.service.generation.GenerationPendingService;
 import com.bambi.service.notification.NotificationService;
 import com.bambi.service.report.Report;
 import com.bambi.service.report.ReportRepository;
@@ -35,16 +36,19 @@ public class PublishProcessingService {
     private final ReportRepository reportRepository;
     private final NotificationService notificationService;
     private final UserRepository userRepository;
+    private final GenerationPendingService pendingService;
 
     public PublishProcessingService(
             CardRepository cardRepository,
             ReportRepository reportRepository,
             NotificationService notificationService,
-            UserRepository userRepository) {
+            UserRepository userRepository,
+            GenerationPendingService pendingService) {
         this.cardRepository = cardRepository;
         this.reportRepository = reportRepository;
         this.notificationService = notificationService;
         this.userRepository = userRepository;
+        this.pendingService = pendingService;
     }
 
     /**
@@ -59,6 +63,7 @@ public class PublishProcessingService {
         if (existingCard.isPresent() && !isNewer(item.version(), existingCard.get().getExternalVersion())) {
             log.info("[PublishWorker] 이미 최신 skip contentId={} (수신 v{}, 저장 v{})",
                     item.contentId(), item.version(), existingCard.get().getExternalVersion());
+            pendingService.markCompleted(userId, item.requestIdempotencyKey());
             return true;
         }
 
@@ -109,6 +114,7 @@ public class PublishProcessingService {
         }
         log.info("[PublishWorker] 리포트+카드 {} contentId={} (v{}), reportId={}",
                 isNew ? "발행" : "갱신", item.contentId(), item.version(), report.getId());
+        pendingService.markCompleted(userId, item.requestIdempotencyKey());
         return true;   // 갱신은 dirty checking, 신규는 save 로 flush
     }
 

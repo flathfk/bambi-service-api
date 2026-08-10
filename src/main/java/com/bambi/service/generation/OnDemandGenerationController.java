@@ -69,12 +69,19 @@ public class OnDemandGenerationController {
     }
 
     /**
-     * 본인 최근(60분) 생성 접수 목록 — 홈 [내 보고서] "처리중" 슬롯용.
-     * 완료 전환이 붙기 전이라 status 는 PENDING 만 온다(시간 창이 노출을 자름).
+     * 본인 활성 생성 접수 목록 — 기존 홈 "처리중" 슬롯 API 호환용.
+     * status 는 PENDING/RUNNING/PUBLISHING 중 하나다.
      * reportType(MORNING_BRIEFING|ON_DEMAND)은 접수 시점 값이라 항상 채워진다.
      */
     @GetMapping("/pending")
     public ApiResponse<List<GenerationPendingResponse>> pending(@AuthenticationPrincipal AuthPrincipal principal) {
         return ApiResponse.ok(pendingService.listRecent(principal.id()));
+    }
+
+    /** 본인 최근 생성 작업의 진행·완료·실패 상태 목록. */
+    @GetMapping("/jobs")
+    public ApiResponse<List<GenerationPendingResponse>> jobs(
+            @AuthenticationPrincipal AuthPrincipal principal) {
+        return ApiResponse.ok(pendingService.listRecentJobs(principal.id()));
     }
 }
