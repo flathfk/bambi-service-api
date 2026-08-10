@@ -1,5 +1,6 @@
 package com.bambi.service.generation;
 
+import com.bambi.service.agent.jobs.AgentJobStatus;
 import com.bambi.service.generation.dto.GenerationPendingResponse;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -19,8 +20,8 @@ import java.util.UUID;
  * 기록 실패는 접수 자체를 되돌리지 않는다 — agent Job 은 이미 등록됐으므로 warn 만 남긴다
  * (북마크 위키 중계와 같은 정책).
  *
- * <p>노출은 최근 {@link #VISIBLE_WINDOW} 안의 PENDING 만 — 완료 전환(claim 연결고리)이 붙기
- * 전까지 오래된 접수가 "처리중"으로 영영 남는 것을 시간 창으로 막는다(후속: 소라 협의).
+ * <p>Agent Job 상태는 5초 폴링으로 갱신하고, 완료는 Publish Snapshot이 Service DB에 반영된
+ * 트랜잭션에서 확정한다. 사용자 조회에는 최근 24시간의 종결 상태도 포함한다.
  */
 @Service
 public class GenerationPendingService {
@@ -31,7 +32,9 @@ public class GenerationPendingService {
     public static final String REPORT_TYPE_ON_DEMAND = "ON_DEMAND";
 
     private static final Logger log = LoggerFactory.getLogger(GenerationPendingService.class);
-    private static final Duration VISIBLE_WINDOW = Duration.ofMinutes(60);
+    private static final Duration ACTIVE_VISIBLE_WINDOW = Duration.ofHours(6);
+    private static final Duration JOB_VISIBLE_WINDOW = Duration.ofHours(24);
+    private static final List<String> ACTIVE_STATUSES = List.of("PENDING", "RUNNING", "PUBLISHING");
 
     private final GenerationPendingRepository pendingRepository;
 
@@ -58,15 +61,58 @@ public class GenerationPendingService {
         return id.toString();
     }
 
-    /** 본인 최근 60분 PENDING 목록 — 홈 "처리중" 슬롯용. */
+    /** 본인 활성 생성 작업 목록 — 기존 pending API 호환용. */
     @Transactional(readOnly = true)
     public List<GenerationPendingResponse> listRecent(long userId) {
-        OffsetDateTime after = OffsetDateTime.now().minus(VISIBLE_WINDOW);
+        OffsetDateTime after = OffsetDateTime.now().minus(ACTIVE_VISIBLE_WINDOW);
         return pendingRepository
-                .findByUserIdAndStatusAndCreatedAtAfterOrderByCreatedAtDesc(userId, "PENDING", after)
+                .findByUserIdAndStatusInAndCreatedAtAfterOrderByCreatedAtDesc(
+                        userId, ACTIVE_STATUSES, after)
                 .stream()
                 .map(GenerationPendingResponse::from)
                 .toList();
+    }
+
+    /** 본인 최근 생성 작업의 진행·완료·실패 상태를 반환한다. */
+    @Transactional(readOnly = true)
+    public List<GenerationPendingResponse> listRecentJobs(long userId) {
+        return pendingRepository
+                .findByUserIdAndCreatedAtAfterOrderByCreatedAtDesc(
+                        userId, OffsetDateTime.now().minus(JOB_VISIBLE_WINDOW))
+                .stream()
+                .map(GenerationPendingResponse::from)
+                .toList();
+    }
+
+    /** 이번 tick에서 Agent 상태를 조회할 생성 작업을 반환한다. */
+    @Transactional(readOnly = true)
+    public List<GenerationPending> findPollable(int limit) {
+        return pendingRepository.findPollable(limit);
+    }
+
+    /** Agent Job 상태를 사용자 생성 작업 상태로 반영한다. */
+    public void applyAgentStatus(GenerationPending pending, AgentJobStatus status) {
+        switch (status.status()) {
+            case "queued" -> pendingRepository.updateStatus(pending.getId(), "PENDING", null);
+            case "running" -> pendingRepository.updateStatus(pending.getId(), "RUNNING", null);
+            case "completed" -> pendingRepository.updateStatus(pending.getId(), "PUBLISHING", null);
+            case "failed" -> pendingRepository.updateStatus(pending.getId(), "FAILED", status.errorCode());
+            case "cancelled" -> pendingRepository.updateStatus(pending.getId(), "CANCELLED", status.errorCode());
+            default -> pendingRepository.updateStatus(pending.getId(), "FAILED", "UNKNOWN_JOB_STATUS");
+        }
+    }
+
+    /** Agent에서 사라진 활성 Job을 최종 실패로 닫는다. */
+    public void markMissing(GenerationPending pending) {
+        pendingRepository.updateStatus(pending.getId(), "FAILED", "JOB_NOT_FOUND");
+    }
+
+    /** Publish Snapshot 반영과 같은 트랜잭션에서 생성 작업을 완료한다. */
+    public void markCompleted(long userId, String idempotencyKey) {
+        if (idempotencyKey == null || idempotencyKey.isBlank()) {
+            return;
+        }
+        pendingRepository.markCompleted(userId, idempotencyKey);
     }
 
     /**

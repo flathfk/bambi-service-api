@@ -1,6 +1,7 @@
 package com.bambi.service.agent;
 
 import com.bambi.service.agent.dto.AgentClippingRequest;
+import com.bambi.service.agent.dto.AgentAcceptedJob;
 import com.bambi.service.agent.dto.AgentUrlSourceRequest;
 import com.bambi.service.bookmark.BookmarkSavedEvent;
 import org.slf4j.Logger;
@@ -9,6 +10,7 @@ import org.springframework.stereotype.Component;
 import org.springframework.transaction.event.TransactionPhase;
 import org.springframework.transaction.event.TransactionalEventListener;
 import org.springframework.util.StringUtils;
+import com.bambi.service.wiki.WikiBuildOperationService;
 
 /**
  * 북마크 저장 완료 → agent 위키 원천 처리로 중계.
@@ -27,9 +29,13 @@ public class BookmarkClippingRelayListener {
     private static final Logger log = LoggerFactory.getLogger(BookmarkClippingRelayListener.class);
 
     private final AgentGateway agentGateway;
+    private final WikiBuildOperationService operationService;
 
-    public BookmarkClippingRelayListener(AgentGateway agentGateway) {
+    public BookmarkClippingRelayListener(
+            AgentGateway agentGateway,
+            WikiBuildOperationService operationService) {
         this.agentGateway = agentGateway;
+        this.operationService = operationService;
     }
 
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
@@ -40,10 +46,13 @@ public class BookmarkClippingRelayListener {
 
         try {
             if (hasUrl && hasContent) {
-                agentGateway.relayClipping(event.userId(), new AgentClippingRequest(
+                AgentAcceptedJob accepted = agentGateway.relayClipping(event.userId(), new AgentClippingRequest(
                         sourceEventId, event.url(), titleOrFallback(event), event.content(), null, java.util.List.of()));
+                operationService.register(event.userId(), sourceEventId, accepted);
             } else if (hasUrl) {
-                agentGateway.relayUrlSource(event.userId(), AgentUrlSourceRequest.of(sourceEventId, event.url()));
+                AgentAcceptedJob accepted = agentGateway.relayUrlSource(
+                        event.userId(), AgentUrlSourceRequest.of(sourceEventId, event.url()));
+                operationService.register(event.userId(), sourceEventId, accepted);
             } else {
                 // 본문만 있는 메모 — clippings·urls 둘 다 URL 필수라 현재 중계 대상 아님.
                 log.debug("[BookmarkRelay] URL 없는 저장 — 위키 중계 건너뜀 (bookmarkId={})", event.bookmarkId());

@@ -1,6 +1,7 @@
 package com.bambi.service.agent;
 
 import com.bambi.service.agent.dto.AgentClippingRequest;
+import com.bambi.service.agent.dto.AgentAcceptedJob;
 import com.bambi.service.agent.dto.AgentContextRequest;
 import com.bambi.service.agent.dto.AgentInterestTaxonomyRequest;
 import com.bambi.service.agent.dto.AgentUrlSourceRequest;
@@ -35,7 +36,7 @@ public interface AgentGateway {
      *
      * @throws com.bambi.service.common.error.ApiException agent 연결 실패/5xx 시 AGENT_UNAVAILABLE
      */
-    void relayClipping(long userId, AgentClippingRequest request);
+    AgentAcceptedJob relayClipping(long userId, AgentClippingRequest request);
 
     /**
      * 본문 없는 URL 저장을 agent 의 개인 Wiki 처리 Job 으로 등록한다.
@@ -45,5 +46,5 @@ public interface AgentGateway {
      *
      * @throws com.bambi.service.common.error.ApiException agent 연결 실패/5xx 시 AGENT_UNAVAILABLE
      */
-    void relayUrlSource(long userId, AgentUrlSourceRequest request);
+    AgentAcceptedJob relayUrlSource(long userId, AgentUrlSourceRequest request);
 }

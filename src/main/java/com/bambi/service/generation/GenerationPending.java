@@ -16,8 +16,8 @@ import java.util.UUID;
  * 저장은 {@link GenerationPendingRepository#insertPending} 멱등 insert 로만 한다 —
  * 재접수(스케줄러 재시도·같은 분 연타)는 ON CONFLICT DO NOTHING 으로 흡수된다.
  *
- * <p>status 는 MVP 에서 PENDING 만 쓴다. 완료 전환은 claim 계약에 생성요청 연결고리
- * (generation_request_id 등)가 붙은 뒤 후속 과제 — 조회가 최근 60분으로 잘라 노출을 막는다.
+ * <p>status 는 PENDING/RUNNING/PUBLISHING/COMPLETED/FAILED/CANCELLED 수명주기를 사용한다.
+ * Agent Job 완료 후에도 Publish Snapshot이 Service DB에 반영될 때까지 PUBLISHING을 유지한다.
  */
 @Entity
 @Table(name = "generation_pendings")
@@ -51,6 +51,9 @@ public class GenerationPending {
     @Column(nullable = false, length = 20)
     private String status;
 
+    @Column(name = "error_code", length = 100)
+    private String errorCode;
+
     @CreationTimestamp
     @Column(name = "created_at", nullable = false, updatable = false)
     private OffsetDateTime createdAt;
@@ -58,6 +61,9 @@ public class GenerationPending {
     @UpdateTimestamp
     @Column(name = "updated_at", nullable = false)
     private OffsetDateTime updatedAt;
+
+    @Column(name = "completed_at")
+    private OffsetDateTime completedAt;
 
     protected GenerationPending() {
     }
@@ -96,5 +102,13 @@ public class GenerationPending {
 
     public OffsetDateTime getCreatedAt() {
         return createdAt;
+    }
+
+    public OffsetDateTime getUpdatedAt() {
+        return updatedAt;
+    }
+
+    public String getErrorCode() {
+        return errorCode;
     }
 }
