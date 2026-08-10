@@ -54,7 +54,7 @@ class WikiRelayControllerTest {
     @DisplayName("Wiki 초기화는 요청 경로의 사용자 ID 없이 인증 주체만 사용한다")
     void resetUsesPrincipalUserId() {
         WikiResetResponse reset = new WikiResetResponse(
-                "42", 1, 2, 3, 1, 1, 0,
+                "42", 1, 2, 3, 4, 6, 4, 1, 1, 0,
                 "2026-08-10T00:00:00Z", "request-1");
         when(service.reset(42L)).thenReturn(reset);
 

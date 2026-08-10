@@ -76,7 +76,7 @@ public class AgentWikiClient {
         return get("/users/" + userId + "/wiki/graph/top-nodes?limit=" + limit, WikiTopNodesResponse.class);
     }
 
-    /** 사용자 원본을 보존하고 개인 LLM Wiki 파생 상태를 초기화한다. */
+    /** 사용자 원본을 영구 삭제하고 개인 LLM Wiki 상태를 초기화한다. */
     public WikiResetResponse reset(long userId) {
         try {
             return restClient.delete()
