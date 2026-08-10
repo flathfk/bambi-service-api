@@ -9,15 +9,18 @@ import com.bambi.service.bookmark.dto.BookmarkCreateResponse;
 import com.bambi.service.card.Card;
 import com.bambi.service.card.CardRepository;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import java.util.List;
+import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
@@ -40,7 +43,9 @@ class BookmarkServiceTest {
         // JPA 가 할당하는 id 를 흉내낸다 — create() 가 이벤트 발행에 bookmark.getId() 를 쓴다.
         when(bookmarkRepository.save(any(Bookmark.class))).thenAnswer(inv -> {
             Bookmark b = inv.getArgument(0);
-            ReflectionTestUtils.setField(b, "id", 10L);
+            if (b.getId() == null) {
+                ReflectionTestUtils.setField(b, "id", 10L);
+            }
             return b;
         });
         return new BookmarkService(bookmarkRepository, cardRepository, agentClient,
@@ -49,8 +54,8 @@ class BookmarkServiceTest {
 
     @Test
     void 즉시카드_OFF면_agent_호출_없이_저장만_하고_card는_null이다() {
-        when(bookmarkRepository.existsByUserIdAndUrlAndDeletedAtIsNull(1L, "https://example.com"))
-                .thenReturn(false);
+        when(bookmarkRepository.findByUserIdAndUrlAndDeletedAtIsNull(1L, "https://example.com"))
+                .thenReturn(Optional.empty());
 
         BookmarkCreateResponse res = service(false)
                 .create(1L, new BookmarkCreateRequest("https://example.com", "제목", null));
@@ -64,8 +69,8 @@ class BookmarkServiceTest {
 
     @Test
     void 즉시카드_ON이면_기존_동기_카드_경로가_유지된다() {
-        when(bookmarkRepository.existsByUserIdAndUrlAndDeletedAtIsNull(1L, "https://example.com"))
-                .thenReturn(false);
+        when(bookmarkRepository.findByUserIdAndUrlAndDeletedAtIsNull(1L, "https://example.com"))
+                .thenReturn(Optional.empty());
         when(agentClient.processBookmark(any()))
                 .thenReturn(new BookmarkProcessResponse("요약", List.of("환율"), List.of(), 0.9));
         when(agentClient.generateCards(any()))
@@ -81,5 +86,49 @@ class BookmarkServiceTest {
         assertThat(res.card().title()).isEqualTo("카드 제목");
         verify(cardRepository).save(any(Card.class));
         verify(eventPublisher).publishEvent(any(BookmarkSavedEvent.class));
+    }
+
+    @Test
+    void 동일_URL_재클리핑은_실패하지_않고_기존_북마크를_재사용한다() {
+        Bookmark existing = new Bookmark(1L, "https://example.com", "제목", "본문");
+        ReflectionTestUtils.setField(existing, "id", 7L);
+        existing.completeProcessing("기존 요약");
+        when(bookmarkRepository.findByUserIdAndUrlAndDeletedAtIsNull(1L, "https://example.com"))
+                .thenReturn(Optional.of(existing));
+
+        BookmarkCreateResponse res = service(false)
+                .create(1L, new BookmarkCreateRequest("https://example.com", "제목", "본문"));
+
+        assertThat(res.bookmark().id()).isEqualTo(7L);
+        assertThat(res.card()).isNull();
+        verify(bookmarkRepository, never()).save(any(Bookmark.class));
+        verify(eventPublisher).publishEvent(any(BookmarkSavedEvent.class));
+        verifyNoInteractions(agentClient);
+        verifyNoInteractions(cardRepository);
+    }
+
+    @Test
+    void 동일_URL의_본문이_바뀌면_기존_북마크를_갱신해_같은_ID로_중계한다() {
+        Bookmark existing = new Bookmark(1L, "https://example.com", "이전 제목", "이전 본문");
+        ReflectionTestUtils.setField(existing, "id", 7L);
+        existing.completeProcessing("이전 요약");
+        when(bookmarkRepository.findByUserIdAndUrlAndDeletedAtIsNull(1L, "https://example.com"))
+                .thenReturn(Optional.of(existing));
+
+        BookmarkCreateResponse res = service(false)
+                .create(1L, new BookmarkCreateRequest("https://example.com", "새 제목", "새 본문"));
+
+        assertThat(res.bookmark().id()).isEqualTo(7L);
+        assertThat(existing.getTitle()).isEqualTo("새 제목");
+        assertThat(existing.getContent()).isEqualTo("새 본문");
+        assertThat(existing.getSummary()).isNull();
+        assertThat(existing.getStatus()).isEqualTo(BookmarkStatus.DONE);
+        verify(bookmarkRepository).save(existing);
+        ArgumentCaptor<BookmarkSavedEvent> eventCaptor = ArgumentCaptor.forClass(BookmarkSavedEvent.class);
+        verify(eventPublisher).publishEvent(eventCaptor.capture());
+        assertThat(eventCaptor.getValue().bookmarkId()).isEqualTo(7L);
+        assertThat(eventCaptor.getValue().content()).isEqualTo("새 본문");
+        verifyNoInteractions(agentClient);
+        verifyNoInteractions(cardRepository);
     }
 }

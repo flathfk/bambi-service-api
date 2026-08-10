@@ -12,6 +12,6 @@ public interface BookmarkRepository extends JpaRepository<Bookmark, Long> {
 
     Optional<Bookmark> findByIdAndUserIdAndDeletedAtIsNull(Long id, Long userId);
 
-    /** 같은 유저의 살아있는 동일 URL 중복 방지 (DB 유니크 인덱스 uq_bookmarks_user_url 의 사전 검사) */
-    boolean existsByUserIdAndUrlAndDeletedAtIsNull(Long userId, String url);
+    /** 같은 유저의 살아있는 동일 URL 북마크를 재클리핑 upsert 대상으로 조회한다. */
+    Optional<Bookmark> findByUserIdAndUrlAndDeletedAtIsNull(Long userId, String url);
 }
