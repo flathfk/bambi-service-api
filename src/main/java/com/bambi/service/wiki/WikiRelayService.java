@@ -5,6 +5,7 @@ import com.bambi.service.wiki.dto.WikiDocumentsResponse;
 import com.bambi.service.wiki.dto.WikiGraphResponse;
 import com.bambi.service.wiki.dto.WikiTagsResponse;
 import com.bambi.service.wiki.dto.WikiTopNodesResponse;
+import com.bambi.service.wiki.dto.WikiResetResponse;
 import org.springframework.stereotype.Service;
 
 /**
@@ -47,5 +48,10 @@ public class WikiRelayService {
     public WikiTopNodesResponse topNodes(long userId, int limit) {
         int safeLimit = Math.min(MAX_TOP_NODES, Math.max(MIN_TOP_NODES, limit));
         return wikiClient.getTopNodes(userId, safeLimit);
+    }
+
+    /** 인증 사용자의 원본은 보존하고 개인 LLM Wiki 파생 상태를 초기화한다. */
+    public WikiResetResponse reset(long userId) {
+        return wikiClient.reset(userId);
     }
 }

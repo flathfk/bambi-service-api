@@ -8,6 +8,7 @@ import com.bambi.service.wiki.dto.WikiDocumentsResponse;
 import com.bambi.service.wiki.dto.WikiGraphResponse;
 import com.bambi.service.wiki.dto.WikiTagsResponse;
 import com.bambi.service.wiki.dto.WikiTopNodesResponse;
+import com.bambi.service.wiki.dto.WikiResetResponse;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
@@ -15,10 +16,10 @@ import org.springframework.web.client.RestClientException;
 import org.springframework.web.client.RestClientResponseException;
 
 /**
- * agent-api 개인 Wiki 조회 GET 중계 클라이언트.
+ * agent-api 개인 Wiki 조회·초기화 중계 클라이언트.
  *
- * <p>쓰기 경계인 {@link com.bambi.service.agent.AgentGateway} 와 달리 이건 읽기 전용이라 AI 로그를
- * 남기지 않는다(사용자 화면 조회는 처리 Job 이 아니라 단순 질의). agent 오류는 팀 공통 에러로 변환하되,
+ * <p>Wiki 초기화도 LLM 호출이나 생성 Job이 아닌 동기 상태 변경이라 AI 로그를 남기지 않는다.
+ * agent 오류는 팀 공통 에러로 변환하되,
  * 아직 활성 관심 Profile이 없는 경우만 빈 결과로, 없는 문서 상세는 Service 표준 404로 변환한다.
  *
  * <p>user_id 는 agent 계약상 문자열이라 Spring 의 long userId 를 경로에 그대로 문자열로 붙인다.
@@ -73,6 +74,20 @@ public class AgentWikiClient {
     /** 연결 상위 위키 Node. limit 은 agent 계약상 1~100. */
     public WikiTopNodesResponse getTopNodes(long userId, int limit) {
         return get("/users/" + userId + "/wiki/graph/top-nodes?limit=" + limit, WikiTopNodesResponse.class);
+    }
+
+    /** 사용자 원본을 보존하고 개인 LLM Wiki 파생 상태를 초기화한다. */
+    public WikiResetResponse reset(long userId) {
+        try {
+            return restClient.delete()
+                    .uri(internalPrefix + "/users/" + userId + "/wiki")
+                    .retrieve()
+                    .body(WikiResetResponse.class);
+        } catch (RestClientResponseException e) {
+            throw AgentErrors.unavailable(e, "agent 위키 초기화 실패");
+        } catch (RestClientException e) {
+            throw AgentErrors.connectFailed(e);
+        }
     }
 
     private <T> T get(String pathSuffix, Class<T> type) {
