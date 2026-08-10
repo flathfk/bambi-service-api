@@ -1,6 +1,7 @@
 package com.bambi.service.agent;
 
 import com.bambi.service.agent.dto.AgentClippingRequest;
+import com.bambi.service.agent.dto.AgentAcceptedJob;
 import com.bambi.service.agent.dto.AgentContextRequest;
 import com.bambi.service.agent.dto.AgentInterestTaxonomyRequest;
 import com.bambi.service.agent.dto.AgentUrlSourceRequest;
@@ -117,20 +118,20 @@ public class RestClientAgentGateway implements AgentGateway {
     }
 
     @Override
-    public void relayClipping(long userId, AgentClippingRequest request) {
-        postWikiSource(userId, "/wiki-sources/clippings", request, "agent 클리핑 중계 실패");
+    public AgentAcceptedJob relayClipping(long userId, AgentClippingRequest request) {
+        return postWikiSource(userId, "/wiki-sources/clippings", request, "agent 클리핑 중계 실패");
     }
 
     @Override
-    public void relayUrlSource(long userId, AgentUrlSourceRequest request) {
-        postWikiSource(userId, "/wiki-sources/urls", request, "agent URL 중계 실패");
+    public AgentAcceptedJob relayUrlSource(long userId, AgentUrlSourceRequest request) {
+        return postWikiSource(userId, "/wiki-sources/urls", request, "agent URL 중계 실패");
     }
 
     /**
      * 위키 원천 처리 POST 공통 로직(clippings·urls). 202 접수만 확인하고, 응답을 AI 로그로 남기며
      * agent 오류를 AGENT_UNAVAILABLE 로 변환한다. clipping/url 은 경로와 실패 문구만 다르다.
      */
-    private void postWikiSource(long userId, String pathSuffix, Object request, String failMessage) {
+    private AgentAcceptedJob postWikiSource(long userId, String pathSuffix, Object request, String failMessage) {
         String path = internalPrefix + "/users/" + userId + pathSuffix;
         String requestBody = toJson(request);
         Long reqLogId = safeLogRequest(userId, path, requestBody);
@@ -146,6 +147,7 @@ public class RestClientAgentGateway implements AgentGateway {
                     .toEntity(String.class);
             // 202 Accepted 가 정상 — Job 접수만 확인한다(결과는 service-worker Pull).
             safeLogResponse(reqLogId, resp.getStatusCode().value(), elapsedMs(startNanos), resp.getBody());
+            return parseAcceptedJob(resp.getBody(), failMessage);
 
         } catch (RestClientResponseException e) {
             safeLogResponse(reqLogId, e.getStatusCode().value(), elapsedMs(startNanos), e.getResponseBodyAsString());
@@ -154,6 +156,22 @@ public class RestClientAgentGateway implements AgentGateway {
         } catch (RestClientException e) {
             safeLogResponse(reqLogId, null, elapsedMs(startNanos), e.getMessage());
             throw AgentErrors.connectFailed(e);
+        }
+    }
+
+    /** Wiki 원천 202 응답에서 추적 가능한 Job ID를 검증해 꺼낸다. */
+    private AgentAcceptedJob parseAcceptedJob(String body, String failMessage) {
+        try {
+            AgentAcceptedJob accepted = objectMapper.readValue(body, AgentAcceptedJob.class);
+            if (accepted.jobId() == null || accepted.jobId().isBlank()) {
+                throw new JsonProcessingException("job_id가 비어 있습니다.") { };
+            }
+            return accepted;
+        } catch (JsonProcessingException | IllegalArgumentException e) {
+            log.warn("[AgentGateway] Wiki 접수 응답 파싱 실패", e);
+            throw new com.bambi.service.common.error.ApiException(
+                    com.bambi.service.common.error.ErrorCode.AGENT_UNAVAILABLE,
+                    failMessage + " (invalid accepted response)");
         }
     }
 

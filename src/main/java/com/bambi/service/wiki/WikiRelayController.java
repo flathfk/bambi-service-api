@@ -8,6 +8,7 @@ import com.bambi.service.wiki.dto.WikiGraphResponse;
 import com.bambi.service.wiki.dto.WikiTagsResponse;
 import com.bambi.service.wiki.dto.WikiTopNodesResponse;
 import com.bambi.service.wiki.dto.WikiResetResponse;
+import com.bambi.service.wiki.dto.WikiBuildStatusResponse;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -28,9 +29,13 @@ import org.springframework.web.bind.annotation.RestController;
 public class WikiRelayController {
 
     private final WikiRelayService wikiRelayService;
+    private final WikiBuildOperationService wikiBuildOperationService;
 
-    public WikiRelayController(WikiRelayService wikiRelayService) {
+    public WikiRelayController(
+            WikiRelayService wikiRelayService,
+            WikiBuildOperationService wikiBuildOperationService) {
         this.wikiRelayService = wikiRelayService;
+        this.wikiBuildOperationService = wikiBuildOperationService;
     }
 
     @GetMapping("/tags")
@@ -46,6 +51,12 @@ public class WikiRelayController {
     @GetMapping("/graph")
     public ApiResponse<WikiGraphResponse> graph(@AuthenticationPrincipal AuthPrincipal principal) {
         return ApiResponse.ok(wikiRelayService.graph(principal.id()));
+    }
+
+    @GetMapping("/build-status")
+    public ApiResponse<WikiBuildStatusResponse> buildStatus(
+            @AuthenticationPrincipal AuthPrincipal principal) {
+        return ApiResponse.ok(wikiBuildOperationService.statusFor(principal.id()));
     }
 
     @GetMapping("/documents/{documentId}")

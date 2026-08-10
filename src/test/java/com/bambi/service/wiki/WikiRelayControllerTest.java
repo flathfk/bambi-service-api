@@ -6,10 +6,12 @@ import com.bambi.service.wiki.dto.WikiDocumentDetailResponse;
 import com.bambi.service.wiki.dto.WikiGraphResponse;
 import com.bambi.service.wiki.dto.WikiGraphStats;
 import com.bambi.service.wiki.dto.WikiResetResponse;
+import com.bambi.service.wiki.dto.WikiBuildStatusResponse;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
+import java.time.OffsetDateTime;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
@@ -20,7 +22,8 @@ import static org.mockito.Mockito.when;
 class WikiRelayControllerTest {
 
     private final WikiRelayService service = mock(WikiRelayService.class);
-    private final WikiRelayController controller = new WikiRelayController(service);
+    private final WikiBuildOperationService buildOperationService = mock(WikiBuildOperationService.class);
+    private final WikiRelayController controller = new WikiRelayController(service, buildOperationService);
     private final AuthPrincipal principal = new AuthPrincipal(42L, "wiki@bambi.test");
 
     @Test
@@ -34,6 +37,19 @@ class WikiRelayControllerTest {
 
         assertThat(response.getData()).isSameAs(graph);
         verify(service).graph(42L);
+    }
+
+    @Test
+    @DisplayName("Wiki 빌드 상태 조회도 인증 주체의 사용자 ID만 사용한다")
+    void buildStatusUsesPrincipalUserId() {
+        WikiBuildStatusResponse status = new WikiBuildStatusResponse(
+                "BUILDING", 1, OffsetDateTime.now(), null);
+        when(buildOperationService.statusFor(42L)).thenReturn(status);
+
+        ApiResponse<WikiBuildStatusResponse> response = controller.buildStatus(principal);
+
+        assertThat(response.getData()).isSameAs(status);
+        verify(buildOperationService).statusFor(42L);
     }
 
     @Test
