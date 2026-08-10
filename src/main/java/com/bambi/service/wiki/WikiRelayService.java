@@ -50,7 +50,7 @@ public class WikiRelayService {
         return wikiClient.getTopNodes(userId, safeLimit);
     }
 
-    /** 인증 사용자의 원본은 보존하고 개인 LLM Wiki 파생 상태를 초기화한다. */
+    /** 인증 사용자의 원본을 영구 삭제하고 개인 LLM Wiki 상태를 초기화한다. */
     public WikiResetResponse reset(long userId) {
         return wikiClient.reset(userId);
     }
