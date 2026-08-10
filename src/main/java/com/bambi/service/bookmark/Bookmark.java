@@ -12,6 +12,7 @@ import org.hibernate.annotations.CreationTimestamp;
 import org.hibernate.annotations.UpdateTimestamp;
 
 import java.time.OffsetDateTime;
+import java.util.Objects;
 
 /**
  * 저장한 URL/본문 (service.bookmarks). 원본 데이터 — Service Layer 가 source of truth.
@@ -65,6 +66,18 @@ public class Bookmark {
         this.title = title;
         this.content = content;
         this.status = BookmarkStatus.PROCESSING;
+    }
+
+    /** 같은 URL을 다시 저장할 때 최신 제목·본문으로 갱신하고 변경 여부를 반환한다. */
+    public boolean refreshSource(String title, String content) {
+        if (Objects.equals(this.title, title) && Objects.equals(this.content, content)) {
+            return false;
+        }
+        this.title = title;
+        this.content = content;
+        this.summary = null;
+        this.status = BookmarkStatus.PROCESSING;
+        return true;
     }
 
     /** Agent 처리 성공 — 요약 반영 + DONE 전이 */

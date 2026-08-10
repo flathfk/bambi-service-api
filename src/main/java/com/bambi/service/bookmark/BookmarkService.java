@@ -68,12 +68,21 @@ public class BookmarkService {
         if (!req.hasUrl() && !req.hasContent()) {
             throw new ApiException(ErrorCode.VALIDATION_ERROR, "url 또는 content 중 하나는 필수입니다.");
         }
-        // 같은 유저의 살아있는 동일 URL 재저장 방지 (DB 유니크 인덱스가 최종 방어선)
-        if (req.hasUrl() && bookmarkRepository.existsByUserIdAndUrlAndDeletedAtIsNull(userId, req.url())) {
-            throw new ApiException(ErrorCode.DUPLICATE_RESOURCE, "이미 저장한 URL입니다.");
+        Bookmark bookmark = null;
+        if (req.hasUrl()) {
+            bookmark = bookmarkRepository.findByUserIdAndUrlAndDeletedAtIsNull(userId, req.url())
+                    .orElse(null);
         }
-
-        Bookmark bookmark = new Bookmark(userId, req.hasUrl() ? req.url() : null, req.title(), req.content());
+        if (bookmark != null) {
+            String nextTitle = req.title() != null ? req.title() : bookmark.getTitle();
+            String nextContent = req.hasContent() ? req.content() : bookmark.getContent();
+            if (!bookmark.refreshSource(nextTitle, nextContent)) {
+                publishSavedEvent(userId, bookmark);
+                return new BookmarkCreateResponse(BookmarkResponse.from(bookmark), null);
+            }
+        } else {
+            bookmark = new Bookmark(userId, req.hasUrl() ? req.url() : null, req.title(), req.content());
+        }
         bookmarkRepository.save(bookmark);   // PROCESSING 으로 저장, id 확보
 
         // 즉시카드 OFF — 저장은 여기서 끝. 요약·주제는 agent 위키 파이프라인(클리핑 중계)이,
@@ -81,8 +90,7 @@ public class BookmarkService {
         // (프론트는 onSaved 에서 card 를 쓰지 않고 refetch 만 한다 — 2026-08-03 실측).
         if (!immediateCardEnabled) {
             bookmark.completeProcessing(null);
-            eventPublisher.publishEvent(new BookmarkSavedEvent(
-                    userId, bookmark.getId(), bookmark.getUrl(), bookmark.getTitle(), bookmark.getContent()));
+            publishSavedEvent(userId, bookmark);
             return new BookmarkCreateResponse(BookmarkResponse.from(bookmark), null);
         }
 
@@ -103,10 +111,15 @@ public class BookmarkService {
         bookmark.completeProcessing(processed.summary());
 
         // 저장 커밋 후 agent 위키 원천 처리로 중계한다(AFTER_COMMIT 리스너). 중계 실패는 저장을 막지 않는다.
-        eventPublisher.publishEvent(new BookmarkSavedEvent(
-                userId, bookmark.getId(), bookmark.getUrl(), bookmark.getTitle(), bookmark.getContent()));
+        publishSavedEvent(userId, bookmark);
 
         return new BookmarkCreateResponse(BookmarkResponse.from(bookmark), CardResponse.from(card));
+    }
+
+    /** 저장·재클리핑 완료 이벤트를 같은 북마크 ID로 발행해 Agent의 멱등 버전 처리를 요청한다. */
+    private void publishSavedEvent(Long userId, Bookmark bookmark) {
+        eventPublisher.publishEvent(new BookmarkSavedEvent(
+                userId, bookmark.getId(), bookmark.getUrl(), bookmark.getTitle(), bookmark.getContent()));
     }
 
     @Transactional(readOnly = true)
