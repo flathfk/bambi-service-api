@@ -7,8 +7,10 @@ import com.bambi.service.wiki.dto.WikiDocumentsResponse;
 import com.bambi.service.wiki.dto.WikiGraphResponse;
 import com.bambi.service.wiki.dto.WikiTagsResponse;
 import com.bambi.service.wiki.dto.WikiTopNodesResponse;
+import com.bambi.service.wiki.dto.WikiResetResponse;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -57,5 +59,11 @@ public class WikiRelayController {
     public ApiResponse<WikiTopNodesResponse> topNodes(@AuthenticationPrincipal AuthPrincipal principal,
                                                       @RequestParam(defaultValue = "10") int limit) {
         return ApiResponse.ok(wikiRelayService.topNodes(principal.id(), limit));
+    }
+
+    @DeleteMapping
+    public ApiResponse<WikiResetResponse> reset(
+            @AuthenticationPrincipal AuthPrincipal principal) {
+        return ApiResponse.ok(wikiRelayService.reset(principal.id()));
     }
 }

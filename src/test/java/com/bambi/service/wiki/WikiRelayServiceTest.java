@@ -2,6 +2,7 @@ package com.bambi.service.wiki;
 
 import com.bambi.service.wiki.dto.WikiDocumentDetailResponse;
 import com.bambi.service.wiki.dto.WikiTopNodesResponse;
+import com.bambi.service.wiki.dto.WikiResetResponse;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -66,5 +67,17 @@ class WikiRelayServiceTest {
 
         assertThat(service.document(9L, "node-1")).isSameAs(detail);
         verify(wikiClient).getDocument(9L, "node-1");
+    }
+
+    @Test
+    @DisplayName("Wiki 초기화: 인증 사용자 ID를 Agent에 그대로 전달한다")
+    void resetUsesAuthenticatedUserScope() {
+        WikiResetResponse reset = new WikiResetResponse(
+                "9", 1, 2, 3, 1, 1, 0,
+                "2026-08-10T00:00:00Z", "request-1");
+        when(wikiClient.reset(9L)).thenReturn(reset);
+
+        assertThat(service.reset(9L)).isSameAs(reset);
+        verify(wikiClient).reset(9L);
     }
 }

@@ -6,6 +6,7 @@ import com.bambi.service.wiki.dto.WikiDocumentDetailResponse;
 import com.bambi.service.wiki.dto.WikiDocumentsResponse;
 import com.bambi.service.wiki.dto.WikiGraphResponse;
 import com.bambi.service.wiki.dto.WikiTagsResponse;
+import com.bambi.service.wiki.dto.WikiResetResponse;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -149,5 +150,26 @@ class AgentWikiClientTest {
         assertThatThrownBy(() -> client.getDocument(7, "missing"))
                 .isInstanceOfSatisfying(ApiException.class,
                         exception -> assertThat(exception.getErrorCode()).isEqualTo(ErrorCode.NOT_FOUND));
+    }
+
+    @Test
+    @DisplayName("Wiki 초기화: 인증 사용자 경로에 DELETE하고 반영 건수를 매핑한다")
+    void resetMapsAccountScopedCounts() {
+        String agentBody = """
+                {"user_id":"7","reset_document_count":3,"reset_relation_count":2,
+                 "unsearchable_chunk_count":5,"retired_wiki_version_count":1,
+                 "retired_interest_profile_count":1,"cancelled_job_count":1,
+                 "reset_at":"2026-08-10T00:00:00Z","request_id":"request-1"}
+                """;
+        server.expect(requestTo("http://agent.local/internal/v1/users/7/wiki"))
+                .andExpect(method(HttpMethod.DELETE))
+                .andRespond(withSuccess(agentBody, MediaType.APPLICATION_JSON));
+
+        WikiResetResponse response = client.reset(7L);
+
+        assertThat(response.userId()).isEqualTo("7");
+        assertThat(response.resetDocumentCount()).isEqualTo(3);
+        assertThat(response.unsearchableChunkCount()).isEqualTo(5);
+        assertThat(response.cancelledJobCount()).isEqualTo(1);
     }
 }

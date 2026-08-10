@@ -5,6 +5,7 @@ import com.bambi.service.common.response.ApiResponse;
 import com.bambi.service.wiki.dto.WikiDocumentDetailResponse;
 import com.bambi.service.wiki.dto.WikiGraphResponse;
 import com.bambi.service.wiki.dto.WikiGraphStats;
+import com.bambi.service.wiki.dto.WikiResetResponse;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -47,5 +48,19 @@ class WikiRelayControllerTest {
 
         assertThat(response.getData()).isSameAs(detail);
         verify(service).document(42L, "node-1");
+    }
+
+    @Test
+    @DisplayName("Wiki 초기화는 요청 경로의 사용자 ID 없이 인증 주체만 사용한다")
+    void resetUsesPrincipalUserId() {
+        WikiResetResponse reset = new WikiResetResponse(
+                "42", 1, 2, 3, 1, 1, 0,
+                "2026-08-10T00:00:00Z", "request-1");
+        when(service.reset(42L)).thenReturn(reset);
+
+        ApiResponse<WikiResetResponse> response = controller.reset(principal);
+
+        assertThat(response.getData()).isSameAs(reset);
+        verify(service).reset(42L);
     }
 }
