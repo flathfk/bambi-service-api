@@ -3,6 +3,7 @@ package com.bambi.service.worker;
 import com.bambi.service.agent.publish.dto.PublishItem;
 import com.bambi.service.card.Card;
 import com.bambi.service.card.CardRepository;
+import com.bambi.service.generation.GenerationPendingService;
 import com.bambi.service.notification.NotificationService;
 import com.bambi.service.report.Report;
 import com.bambi.service.report.ReportRepository;
@@ -31,14 +32,16 @@ class PublishProcessingServiceTest {
     private final ReportRepository reportRepository = mock(ReportRepository.class);
     private final NotificationService notificationService = mock(NotificationService.class);
     private final UserRepository userRepository = mock(UserRepository.class);
+    private final GenerationPendingService pendingService = mock(GenerationPendingService.class);
     private final PublishProcessingService service =
-            new PublishProcessingService(cardRepository, reportRepository, notificationService, userRepository);
+            new PublishProcessingService(
+                    cardRepository, reportRepository, notificationService, userRepository, pendingService);
 
     private static PublishItem item(String contentId, int version, String title, String summary) {
         // content_tags·report_type 미도착(단계적 롤아웃 전) → tags(topic) 폴백 + reportType null 경로
         return new PublishItem(contentId, "1", version, "hash-" + version, title, summary, "본문-" + version,
                 List.of(new PublishItem.Citation("src", "https://example.com")),
-                List.of("코스피"), null, null);
+                List.of("코스피"), null, null, null);
     }
 
     /** 설정 적용 테스트용 사용자 목 — 기본 공개범위 + 알림 수신 여부. */
@@ -84,7 +87,7 @@ class PublishProcessingServiceTest {
         when(reportRepository.findByUserIdAndExternalContentId(1L, "c1")).thenReturn(Optional.empty());
         when(reportRepository.save(any(Report.class))).thenAnswer(inv -> inv.getArgument(0));
         PublishItem item = new PublishItem("c1", "1", 1, "hash-1", "제목", "요약", "본문",
-                List.of(), List.of(), List.of("반도체"), "ON_DEMAND");
+                List.of(), List.of(), List.of("반도체"), "ON_DEMAND", null);
 
         service.upsert(item);
 
@@ -126,7 +129,7 @@ class PublishProcessingServiceTest {
         when(reportRepository.save(any(Report.class))).thenAnswer(inv -> inv.getArgument(0));
         // tags=topic 에코, content_tags=리포트 내용 기반 실제 태그
         PublishItem item = new PublishItem("c1", "1", 1, "hash-1", "제목", "요약", "본문",
-                List.of(), List.of("오늘의 관심사 뉴스"), List.of("군사 AI", "AI 규제"), null);
+                List.of(), List.of("오늘의 관심사 뉴스"), List.of("군사 AI", "AI 규제"), null, null);
 
         service.upsert(item);
 
@@ -223,6 +226,20 @@ class PublishProcessingServiceTest {
         assertThat(existingCard.getTitle()).isEqualTo("제목");   // 안 바뀜
         verify(cardRepository, never()).save(any(Card.class));
         verify(reportRepository, never()).save(any(Report.class));
+    }
+
+    @Test
+    void 발행_반영후_요청_멱등키로_생성작업을_완료한다() {
+        Card existingCard = Card.fromExternal(1L, "c1", 1, "제목", "요약", null);
+        when(cardRepository.findByUserIdAndExternalContentId(1L, "c1"))
+                .thenReturn(Optional.of(existingCard));
+        PublishItem published = new PublishItem(
+                "c1", "1", 1, "hash-1", "제목", "요약", "본문",
+                List.of(), List.of(), List.of(), "ON_DEMAND", "generation-key-1");
+
+        service.upsert(published);
+
+        verify(pendingService).markCompleted(1L, "generation-key-1");
     }
 
     @Test

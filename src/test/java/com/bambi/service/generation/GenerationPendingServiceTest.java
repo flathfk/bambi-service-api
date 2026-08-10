@@ -1,6 +1,7 @@
 package com.bambi.service.generation;
 
 import com.bambi.service.generation.dto.GenerationPendingResponse;
+import com.bambi.service.agent.jobs.AgentJobStatus;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -17,7 +18,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
- * {@link GenerationPendingService} — 결정적 id 파생 · 멱등 기록(실패 삼킴) · 최근 60분 PENDING 조회.
+ * {@link GenerationPendingService} — 결정적 id·Agent 상태 전이·최근 작업 조회.
  */
 class GenerationPendingServiceTest {
 
@@ -62,7 +63,7 @@ class GenerationPendingServiceTest {
     }
 
     @Test
-    @DisplayName("listRecent 는 본인 PENDING 만 최근 60분 창으로 조회해 응답으로 매핑한다")
+    @DisplayName("listRecent 는 본인 활성 작업을 조회해 응답으로 매핑한다")
     void listRecentMapsEntities() {
         GenerationPending pending = mock(GenerationPending.class);
         UUID id = UUID.randomUUID();
@@ -73,8 +74,10 @@ class GenerationPendingServiceTest {
         when(pending.getReportType()).thenReturn(GenerationPendingService.REPORT_TYPE_ON_DEMAND);
         when(pending.getStatus()).thenReturn("PENDING");
         when(pending.getCreatedAt()).thenReturn(created);
-        when(repository.findByUserIdAndStatusAndCreatedAtAfterOrderByCreatedAtDesc(
-                eq(28L), eq("PENDING"), any())).thenReturn(List.of(pending));
+        when(pending.getUpdatedAt()).thenReturn(created);
+        when(repository.findByUserIdAndStatusInAndCreatedAtAfterOrderByCreatedAtDesc(
+                eq(28L), eq(List.of("PENDING", "RUNNING", "PUBLISHING")), any()))
+                .thenReturn(List.of(pending));
 
         List<GenerationPendingResponse> result = service.listRecent(28L);
 
@@ -85,5 +88,27 @@ class GenerationPendingServiceTest {
         assertThat(response.reportType()).isEqualTo("ON_DEMAND");
         assertThat(response.status()).isEqualTo("PENDING");
         assertThat(response.createdAt()).isEqualTo(created);
+        assertThat(response.updatedAt()).isEqualTo(created);
+    }
+
+    @Test
+    @DisplayName("Agent Job 완료는 Publish 반영 전 PUBLISHING으로 전환한다")
+    void completedAgentJobWaitsForPublish() {
+        GenerationPending pending = mock(GenerationPending.class);
+        UUID id = UUID.randomUUID();
+        when(pending.getId()).thenReturn(id);
+
+        service.applyAgentStatus(pending,
+                new AgentJobStatus("job-1", "report_generation", "completed", 100, null));
+
+        verify(repository).updateStatus(id, "PUBLISHING", null);
+    }
+
+    @Test
+    @DisplayName("Publish idempotency key로 생성 작업을 완료한다")
+    void publishMarksPendingCompleted() {
+        service.markCompleted(28L, "generation-key-1");
+
+        verify(repository).markCompleted(28L, "generation-key-1");
     }
 }

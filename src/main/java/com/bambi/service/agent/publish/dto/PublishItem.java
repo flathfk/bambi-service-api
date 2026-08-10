@@ -24,6 +24,7 @@ import java.util.List;
  * <p>{@code report_type} — 생성 유형(MORNING_BRIEFING|ON_DEMAND, 2026-08-06 합의).
  * 소라(agent 게이트웨이)가 단계적으로 추가하는 필드라 아직 안 오는 스냅샷이 대부분이다 —
  * 없으면 null 로 관용 파싱한다({@link #normalizedReportType()}). 발행 처리를 절대 깨지 않는다.
+ * {@code request_idempotency_key}는 Service의 생성 작업을 Publish 완료로 닫는 연결 키다.
  */
 public record PublishItem(
         @JsonProperty("content_id") String contentId,
@@ -36,7 +37,8 @@ public record PublishItem(
         @JsonProperty("citations") List<Citation> citations,
         @JsonProperty("tags") List<String> tags,
         @JsonProperty("content_tags") List<String> contentTags,
-        @JsonProperty("report_type") String reportType) {
+        @JsonProperty("report_type") String reportType,
+        @JsonProperty("request_idempotency_key") String requestIdempotencyKey) {
 
     /**
      * 카드에 저장·노출할 관심사 태그. 리포트 내용 기반 {@code content_tags} 를 우선하고,
