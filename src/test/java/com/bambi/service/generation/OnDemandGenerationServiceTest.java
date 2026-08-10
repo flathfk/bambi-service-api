@@ -36,7 +36,7 @@ class OnDemandGenerationServiceTest {
     private final GenerationPendingService pendingService = new GenerationPendingService(pendingRepository);
     private final com.bambi.service.interest.InterestService interestService =
             mock(com.bambi.service.interest.InterestService.class);
-    // 계정 Delta 설정 조회용(V19). 기본 mock 은 Optional.empty → 설정 없음 = Delta 꺼짐.
+    // 계정 Delta 설정 조회용(V21). 기본 mock 은 Optional.empty → 설정 없음 = Delta 꺼짐.
     private final com.bambi.service.user.UserRepository userRepository =
             mock(com.bambi.service.user.UserRepository.class);
     private final OnDemandGenerationService service = new OnDemandGenerationService(
@@ -253,7 +253,7 @@ class OnDemandGenerationServiceTest {
     }
 
     @Test
-    @DisplayName("계정 설정이 켜져 있으면 change_history_enabled 를 실어 보낸다 (V19)")
+    @DisplayName("계정 설정이 켜져 있으면 change_history_enabled 를 실어 보낸다 (V21)")
     void accountDeltaOnSendsFlag() {
         when(userRepository.findById(28L)).thenReturn(java.util.Optional.of(userWithDelta(true)));
         when(wikiClient.getTags(28L)).thenReturn(tagsWith("SK하이닉스"));

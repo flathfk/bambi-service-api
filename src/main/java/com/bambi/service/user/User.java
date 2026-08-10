@@ -60,7 +60,7 @@ public class User {
     @Column(name = "report_ready_notification", nullable = false)
     private boolean reportReadyNotification = true;
 
-    // 변경점(Delta) 추적 계정 설정(V19, 김기용 08-10). 요청 단위 토글을 대체한다 —
+    // 변경점(Delta) 추적 계정 설정(V21, 김기용 08-10). 요청 단위 토글을 대체한다 —
     // true 면 온디맨드 생성에 change_history_enabled 를 싣는다. 초기값 false 는 DB DEFAULT 와 일치
     // (델타는 LLM 호출이 많은 경로라 명시적 opt-in).
     @Column(name = "change_history_enabled", nullable = false)
