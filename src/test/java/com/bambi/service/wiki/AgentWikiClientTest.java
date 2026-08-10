@@ -157,7 +157,9 @@ class AgentWikiClientTest {
     void resetMapsAccountScopedCounts() {
         String agentBody = """
                 {"user_id":"7","reset_document_count":3,"reset_relation_count":2,
-                 "unsearchable_chunk_count":5,"retired_wiki_version_count":1,
+                 "unsearchable_chunk_count":5,"deleted_source_document_count":4,
+                 "deleted_source_version_count":6,"redacted_source_event_count":4,
+                 "retired_wiki_version_count":1,
                  "retired_interest_profile_count":1,"cancelled_job_count":1,
                  "reset_at":"2026-08-10T00:00:00Z","request_id":"request-1"}
                 """;
@@ -170,6 +172,9 @@ class AgentWikiClientTest {
         assertThat(response.userId()).isEqualTo("7");
         assertThat(response.resetDocumentCount()).isEqualTo(3);
         assertThat(response.unsearchableChunkCount()).isEqualTo(5);
+        assertThat(response.deletedSourceDocumentCount()).isEqualTo(4);
+        assertThat(response.deletedSourceVersionCount()).isEqualTo(6);
+        assertThat(response.redactedSourceEventCount()).isEqualTo(4);
         assertThat(response.cancelledJobCount()).isEqualTo(1);
     }
 }
