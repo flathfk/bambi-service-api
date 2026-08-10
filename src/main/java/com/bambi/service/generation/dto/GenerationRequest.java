@@ -29,6 +29,10 @@ import java.util.List;
  * @param reportType     생성 유형 (2026-08-06 계약: MORNING_BRIEFING | ON_DEMAND | ONBOARDING).
  *                       agent 가 발행 snapshot(PublishItem)에 그대로 실어 돌려주고, service 가 claim 에서 저장한다.
  *                       ONBOARDING 은 agent 자동 경로라 service 트리거는 앞 2개만 보낸다.
+ * @param changeHistoryEnabled 변경점(Delta) 추적 (agent-api #12 김기용). 켜면 직전 보고서 이후의
+ *                       신규·갱신 사실을 갈라 정리한 통합 보고서를 만든다 — <b>기존 생성 경로를 대체한다.</b>
+ *                       <b>끌 때는 false 가 아니라 null 을 넣는다</b> — agent 기본값이 false 라
+ *                       보낼 이유가 없고, null 이어야 직렬화에서 빠져 기존 요청 본문과 완전히 같아진다.
  */
 @JsonInclude(JsonInclude.Include.NON_EMPTY)   // language/scheduled_at/report_type/topics 빈 값은 직렬화 생략
 public record GenerationRequest(
@@ -38,7 +42,8 @@ public record GenerationRequest(
         @JsonProperty("content_type") String contentType,
         @JsonProperty("language") String language,
         @JsonProperty("scheduled_at") OffsetDateTime scheduledAt,
-        @JsonProperty("report_type") String reportType) {
+        @JsonProperty("report_type") String reportType,
+        @JsonProperty("change_history_enabled") Boolean changeHistoryEnabled) {
 
     /**
      * 단일 주제 요청 — {@code topic} 이 <b>실제 검색어</b>다. 온디맨드가 쓴다.
@@ -46,8 +51,21 @@ public record GenerationRequest(
      */
     public static GenerationRequest singleTopic(String idempotencyKey, String searchTopic,
                                                 String contentType, String reportType) {
+        return singleTopic(idempotencyKey, searchTopic, contentType, reportType, false);
+    }
+
+    /**
+     * 변경점(Delta) 추적을 선택할 수 있는 단일 주제 요청.
+     *
+     * <p>{@code changeHistory} 가 false 면 필드를 <b>아예 싣지 않는다</b>(null → NON_EMPTY 로 생략).
+     * agent 기본값이 false 라 결과는 같지만, 보내지 않아야 기존 요청 본문과 바이트 단위로 동일해
+     * 이 변경이 기존 온디맨드 동작에 영향을 주지 않는 것이 명확해진다.
+     */
+    public static GenerationRequest singleTopic(String idempotencyKey, String searchTopic,
+                                                String contentType, String reportType,
+                                                boolean changeHistory) {
         return new GenerationRequest(idempotencyKey, searchTopic, List.of(), contentType,
-                null, null, reportType);
+                null, null, reportType, changeHistory ? Boolean.TRUE : null);
     }
 
     /**
@@ -64,7 +82,9 @@ public record GenerationRequest(
             throw new IllegalArgumentException(
                     "topics 없이 제목용 문구를 topic 으로 보내면 그 문구로 검색된다 — 호출 전에 걸러야 한다.");
         }
+        // 아침 브리핑에는 Delta 를 켜지 않는다. 둘 다 "기존 생성 경로를 대체"라서 어느 쪽이
+        // 이기는지 계약에 정의가 없다(agent-api #12 / #20). 온디맨드에서만 선택한다.
         return new GenerationRequest(idempotencyKey, titleTopic, List.copyOf(topics), contentType,
-                null, null, reportType);
+                null, null, reportType, null);
     }
 }
