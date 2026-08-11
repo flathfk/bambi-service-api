@@ -11,6 +11,7 @@ import jakarta.persistence.Table;
 
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
+import java.util.Objects;
 
 /** 스케줄 시각과 실제 Agent 호출 사이를 분리하는 사용자별 Outbox 이벤트. */
 @Entity
@@ -85,10 +86,70 @@ public class GenerationScheduleOutboxEvent {
         return new GenerationScheduleOutboxEvent(phase, scheduleDate, userId);
     }
 
+    /** 폴러가 지정 시간 동안 이벤트 처리 권한을 점유한다. */
+    public void markProcessing(String workerId, int leaseSeconds) {
+        OffsetDateTime now = OffsetDateTime.now();
+        this.status = "PROCESSING";
+        this.attemptCount += 1;
+        this.lockedBy = workerId;
+        this.leaseExpiresAt = now.plusSeconds(leaseSeconds);
+        this.updatedAt = now;
+    }
+
+    /** 현재 PROCESSING 이벤트를 점유한 Worker인지 확인한다. */
+    public boolean isOwnedBy(String workerId) {
+        return "PROCESSING".equals(status) && Objects.equals(lockedBy, workerId);
+    }
+
+    /** Agent 접수 또는 생성 불필요 판단이 끝난 이벤트를 종결한다. */
+    public void markDelivered(String agentJobId) {
+        OffsetDateTime now = OffsetDateTime.now();
+        this.status = "DELIVERED";
+        this.agentJobId = agentJobId;
+        this.lastError = null;
+        this.lockedBy = null;
+        this.leaseExpiresAt = null;
+        this.deliveredAt = now;
+        this.updatedAt = now;
+    }
+
+    /** 실패 이벤트를 지수 지연 후 재시도하거나 최대 시도에 도달하면 DEAD로 종결한다. */
+    public void markRetry(
+            Throwable error,
+            int maxAttempts,
+            int retryBaseSeconds,
+            int retryMaxSeconds) {
+        OffsetDateTime now = OffsetDateTime.now();
+        this.lastError = safeError(error);
+        this.lockedBy = null;
+        this.leaseExpiresAt = null;
+        this.updatedAt = now;
+        if (attemptCount >= maxAttempts) {
+            this.status = "DEAD";
+            return;
+        }
+        long multiplier = 1L << Math.min(Math.max(attemptCount - 1, 0), 20);
+        long delaySeconds = Math.min(retryMaxSeconds, retryBaseSeconds * multiplier);
+        this.status = "PENDING";
+        this.nextAttemptAt = now.plusSeconds(delaySeconds);
+    }
+
+    private String safeError(Throwable error) {
+        String message = error == null || error.getMessage() == null
+                ? "unknown error"
+                : error.getMessage();
+        return message.substring(0, Math.min(message.length(), 2000));
+    }
+
     public Long getId() { return id; }
     public GenerationSchedulePhase getPhase() { return phase; }
     public LocalDate getScheduleDate() { return scheduleDate; }
     public Long getUserId() { return userId; }
     public String getStatus() { return status; }
     public int getAttemptCount() { return attemptCount; }
+    public String getLockedBy() { return lockedBy; }
+    public OffsetDateTime getLeaseExpiresAt() { return leaseExpiresAt; }
+    public OffsetDateTime getNextAttemptAt() { return nextAttemptAt; }
+    public String getLastError() { return lastError; }
+    public String getAgentJobId() { return agentJobId; }
 }

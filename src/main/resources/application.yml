@@ -75,6 +75,18 @@ app:
     immediate-card:
       enabled: ${AGENT_IMMEDIATE_CARD_ENABLED:true}
   worker:
+    generation-schedule:
+      # 03시 준비·07시 생성 Outbox를 실제 Agent 요청으로 전달하는 제한 동시성 Worker.
+      enabled: ${WORKER_GENERATION_SCHEDULE_ENABLED:true}
+      worker-id: ${WORKER_ID:service-worker-01}
+      poll-interval-ms: ${WORKER_GENERATION_SCHEDULE_POLL_INTERVAL_MS:3000}
+      initial-delay-ms: ${WORKER_GENERATION_SCHEDULE_INITIAL_DELAY_MS:5000}
+      batch-limit: ${WORKER_GENERATION_SCHEDULE_BATCH_LIMIT:20}
+      concurrency: ${WORKER_GENERATION_SCHEDULE_CONCURRENCY:4}
+      lease-seconds: ${WORKER_GENERATION_SCHEDULE_LEASE_SECONDS:120}
+      max-attempts: ${WORKER_GENERATION_SCHEDULE_MAX_ATTEMPTS:8}
+      retry-base-seconds: ${WORKER_GENERATION_SCHEDULE_RETRY_BASE_SECONDS:5}
+      retry-max-seconds: ${WORKER_GENERATION_SCHEDULE_RETRY_MAX_SECONDS:300}
     scrap-wiki:
       enabled: ${WORKER_SCRAP_WIKI_ENABLED:true}
       poll-interval-ms: ${WORKER_SCRAP_WIKI_POLL_INTERVAL_MS:3000}
@@ -97,15 +109,14 @@ app:
     generation-outbox:
       # 스케줄 시각에는 외부 API를 호출하지 않고 활성 사용자를 키셋 페이지로 Outbox에 적재한다.
       user-page-size: ${SCHEDULER_GENERATION_OUTBOX_USER_PAGE_SIZE:500}
-    # 콘텐츠 생성 트리거 (송우 가이드 §3.4 — 지정 시각에 사용자별 생성 요청)
+    # 콘텐츠 생성 트리거 — 지정 시각에는 사용자별 요청을 Outbox에만 적재한다.
     generation:
-      # 기본 비활성(실제 생성 연동 P1 전까지 Mock 로깅). 켜려면 true.
+      # 기본 비활성. 개발/라이브 서버에서 이 배치를 운영할 때 true로 켠다.
       enabled: ${SCHEDULER_GENERATION_ENABLED:false}
       cron: ${SCHEDULER_GENERATION_CRON:0 0 7 * * *}   # 매일 07:00 KST
       content-type: ${SCHEDULER_GENERATION_CONTENT_TYPE:interest_news_card}
-    # 아침 브리핑 주제 선조회 (2026-08-11 유림 요청 — 새벽에 주제를 알려주면 agent 가 미리 수집한다).
-    # 07:00 생성보다 앞서야 의미가 있다. generation 스케줄러와 독립적으로 켜고 끈다.
+    # 아침 브리핑 준비 Job 발행. Agent가 주제 선정과 Wiki·Global·Live 근거를 미리 Snapshot으로 만든다.
+    # 07:00 생성보다 앞서야 의미가 있으며 generation 스케줄러와 독립적으로 켜고 끈다.
     briefing-prefetch:
       enabled: ${SCHEDULER_BRIEFING_PREFETCH_ENABLED:false}
       cron: ${SCHEDULER_BRIEFING_PREFETCH_CRON:0 0 3 * * *}   # 매일 03:00 KST
-      # topic(검색 주제)은 고정값이 아니라 사용자별 대표 관심사(위키 태그 score 최고)를 런타임에 사용한다.
