@@ -3,6 +3,7 @@ package com.bambi.service.agent.publish;
 import com.bambi.service.agent.publish.dto.AckRequest;
 import com.bambi.service.agent.publish.dto.ClaimRequest;
 import com.bambi.service.agent.publish.dto.ClaimResponse;
+import com.bambi.service.agent.publish.dto.PublishItem;
 import com.bambi.service.common.error.ApiException;
 import com.bambi.service.common.error.ErrorCode;
 import org.junit.jupiter.api.BeforeEach;
@@ -51,6 +52,8 @@ class RestClientPublishSnapshotClientTest {
                    {"content_id":"bookmark-9","user_id":"23","version":2,"snapshot_hash":"h9",
                     "title":"심화 브리핑","summary":"요약","body":"본문 전체",
                     "citations":[{"title":"출처","url":"https://ex.com"}],
+                    "cover_image":{"url":"https://cdn.ex.com/cover.jpg",
+                      "source_url":"https://ex.com","source_title":"출처","reference":"G1"},
                     "tags":["코스피"],
                     "content_tags":["외국인 수급","반도체주"],
                     "created_at":"2026-07-30T01:00:00Z"}]}
@@ -73,6 +76,11 @@ class RestClientPublishSnapshotClientTest {
         assertThat(resp.items().get(0).body()).isEqualTo("본문 전체");
         assertThat(resp.items().get(0).citations()).hasSize(1);
         assertThat(resp.items().get(0).citations().get(0).url()).isEqualTo("https://ex.com");
+        assertThat(resp.items().get(0).normalizedCoverImage().url())
+                .isEqualTo("https://cdn.ex.com/cover.jpg");
+        assertThat(resp.items().get(0).normalizedCoverImage().sourceUrl())
+                .isEqualTo("https://ex.com");
+        assertThat(resp.items().get(0).normalizedCoverImage().reference()).isEqualTo("G1");
         assertThat(resp.items().get(0).tags()).containsExactly("코스피");   // topic 에코 파싱
         assertThat(resp.items().get(0).contentTags()).containsExactly("외국인 수급", "반도체주");   // content_tags 파싱
         assertThat(resp.items().get(0).interestTags()).containsExactly("외국인 수급", "반도체주");   // 노출용은 content_tags 우선
@@ -99,6 +107,18 @@ class RestClientPublishSnapshotClientTest {
 
         assertThat(resp.items().get(0).reportType()).isEqualTo("MORNING_BRIEFING");
         assertThat(resp.items().get(0).normalizedReportType()).isEqualTo("MORNING_BRIEFING");
+    }
+
+    @Test
+    @DisplayName("cover_image: HTTP(S)가 아닌 선택 필드는 이미지 없음으로 처리한다")
+    void rejectsUnsafeCoverImageWithoutBreakingPublish() {
+        PublishItem item = new PublishItem(
+                "c1", "1", 1, "h1", "제목", "요약", "본문",
+                List.of(), List.of(), List.of(), null, null, null, null, null, null,
+                new PublishItem.CoverImage(
+                        "javascript:alert(1)", "https://ex.com", "출처", "G1"));
+
+        assertThat(item.normalizedCoverImage()).isNull();
     }
 
     @Test

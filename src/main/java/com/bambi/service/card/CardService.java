@@ -63,7 +63,7 @@ public class CardService {
         long likeCount = likeRepository.countByCardId(card.getId());
         boolean liked = viewerId != null && likeRepository.existsByUserIdAndCardId(viewerId, card.getId());
         boolean scrapped = viewerId != null && scrapRepository.existsByUserIdAndCardId(viewerId, card.getId());
-        return CardResponse.forDetail(card, reportPublicId(card), author, likeCount, liked, scrapped);
+        return CardResponse.forDetail(card, linkedReport(card), author, likeCount, liked, scrapped);
     }
 
     /**
@@ -81,11 +81,16 @@ public class CardService {
 
     /** 카드가 참조하는 리포트의 publicId(없으면 null). 단건 조회라 1쿼리로 충분. */
     private UUID reportPublicId(Card card) {
+        Report report = linkedReport(card);
+        return report != null ? report.getPublicId() : null;
+    }
+
+    /** 카드가 참조하는 리포트 전체를 읽어 상세 응답의 대표 이미지까지 같은 조회로 채운다. */
+    private Report linkedReport(Card card) {
         if (card.getReportId() == null) {
             return null;
         }
         return reportRepository.findById(card.getReportId())
-                .map(Report::getPublicId)
                 .orElse(null);
     }
 

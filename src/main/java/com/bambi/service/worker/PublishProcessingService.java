@@ -132,12 +132,24 @@ public class PublishProcessingService {
                     userId, item.contentId(), item.version(), item.title(), item.summary(), item.body());
             addCitations(report, item);
             report.applyReportType(item.normalizedReportType());   // 생성 유형(없으면 null — 관용)
+            applyCoverImage(report, item);
             return reportRepository.save(report);   // id 확보(카드가 참조)
         }
         report.updateBody(item.version(), item.title(), item.summary(), item.body());
         addCitations(report, item);   // updateBody 가 인용을 비웠으므로 다시 채운다
         report.applyReportType(item.normalizedReportType());   // null 재발행은 기존 유형 유지
+        applyCoverImage(report, item);
         return report;   // dirty checking
+    }
+
+    /** 대표 이미지 선택 필드는 nullable이며, 유효하지 않으면 이전 이미지를 함께 지운다. */
+    private void applyCoverImage(Report report, PublishItem item) {
+        PublishItem.CoverImage cover = item.normalizedCoverImage();
+        report.applyCoverImage(
+                cover != null ? cover.url() : null,
+                cover != null ? cover.sourceUrl() : null,
+                cover != null ? cover.sourceTitle() : null,
+                cover != null ? cover.reference() : null);
     }
 
     /** 수신 version 이 저장본보다 큰가. version 없으면(=null) 갱신하지 않는다(구현 안전). */

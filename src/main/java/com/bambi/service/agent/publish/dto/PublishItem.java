@@ -2,6 +2,7 @@ package com.bambi.service.agent.publish.dto;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
 
+import java.net.URI;
 import java.time.OffsetDateTime;
 import java.util.List;
 
@@ -45,7 +46,31 @@ public record PublishItem(
         // 추천 매칭용(2026-08-11 계약 A안). 카드가 매핑되는 taxonomy topic_key 집합 + 파생 버전.
         // content_tags·report_type 처럼 단계적 롤아웃 — 안 오면 null(관용). Card.replaceTaxonomyTopics 가 null 을 흡수.
         @JsonProperty("taxonomy_topic_ids") List<String> taxonomyTopicIds,
-        @JsonProperty("taxonomy_version") String taxonomyVersion) {
+        @JsonProperty("taxonomy_version") String taxonomyVersion,
+        @JsonProperty("cover_image") CoverImage coverImage) {
+
+    /** cover_image 도입 전 내부 생성 코드와 테스트가 사용하던 생성자 계약을 유지한다. */
+    public PublishItem(
+            String contentId,
+            String userId,
+            Integer version,
+            String snapshotHash,
+            String title,
+            String summary,
+            String body,
+            List<Citation> citations,
+            List<String> tags,
+            List<String> contentTags,
+            String reportType,
+            String requestIdempotencyKey,
+            String generationTopic,
+            OffsetDateTime createdAt,
+            List<String> taxonomyTopicIds,
+            String taxonomyVersion) {
+        this(contentId, userId, version, snapshotHash, title, summary, body,
+                citations, tags, contentTags, reportType, requestIdempotencyKey,
+                generationTopic, createdAt, taxonomyTopicIds, taxonomyVersion, null);
+    }
 
     /**
      * 연결 키가 실려 왔는가. 2026-08-10 이전에 이미 생성돼 저장된 Snapshot 은 이 값이
@@ -80,6 +105,62 @@ public record PublishItem(
     }
 
     /**
+     * 대표 이미지 저장용 값. 선택 필드가 잘못돼도 발행 전체를 실패시키지 않도록
+     * 두 URL이 모두 절대 HTTP(S)일 때만 정규화하고, 나머지는 이미지 없음으로 다룬다.
+     */
+    public CoverImage normalizedCoverImage() {
+        if (coverImage == null) {
+            return null;
+        }
+        String imageUrl = normalizeHttpUrl(coverImage.url());
+        String sourceUrl = normalizeHttpUrl(coverImage.sourceUrl());
+        if (imageUrl == null || sourceUrl == null) {
+            return null;
+        }
+        return new CoverImage(
+                imageUrl,
+                sourceUrl,
+                normalizeText(coverImage.sourceTitle(), 500),
+                normalizeText(coverImage.reference(), 20));
+    }
+
+    private static String normalizeHttpUrl(String value) {
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+        String normalized = value.strip();
+        if (normalized.length() > 2048) {
+            return null;
+        }
+        try {
+            URI uri = URI.create(normalized);
+            String scheme = uri.getScheme();
+            if (scheme == null
+                    || !(scheme.equalsIgnoreCase("http") || scheme.equalsIgnoreCase("https"))
+                    || uri.getRawAuthority() == null
+                    || uri.getRawAuthority().isBlank()
+                    || uri.getUserInfo() != null) {
+                return null;
+            }
+            return normalized;
+        } catch (IllegalArgumentException ignored) {
+            return null;
+        }
+    }
+
+    private static String normalizeText(String value, int maxLength) {
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+        String normalized = value.strip();
+        int codePointCount = normalized.codePointCount(0, normalized.length());
+        if (codePointCount <= maxLength) {
+            return normalized;
+        }
+        return normalized.substring(0, normalized.offsetByCodePoints(0, maxLength));
+    }
+
+    /**
      * service-db 저장용 사용자 ID. 숫자가 아니면 처리 실패로 보고 예외를 던진다
      * (워커가 retryable=false 로 ACK 하도록).
      */
@@ -96,5 +177,13 @@ public record PublishItem(
     public record Citation(
             @JsonProperty("title") String title,
             @JsonProperty("url") String url) {
+    }
+
+    /** 리포트 대표 이미지와 화면에 표시할 실제 인용 출처. */
+    public record CoverImage(
+            @JsonProperty("url") String url,
+            @JsonProperty("source_url") String sourceUrl,
+            @JsonProperty("source_title") String sourceTitle,
+            @JsonProperty("reference") String reference) {
     }
 }

@@ -17,6 +17,7 @@ public record ReportResponse(
         String summary,
         String body,
         String reportType,
+        ReportCoverImageResponse coverImage,
         List<CitationResponse> citations,
         OffsetDateTime createdAt) {
 
@@ -33,6 +34,7 @@ public record ReportResponse(
                 report.getSummary(),
                 report.getBody(),
                 report.getReportType(),
+                ReportCoverImageResponse.from(report),
                 citations,
                 report.getCreatedAt());
     }
