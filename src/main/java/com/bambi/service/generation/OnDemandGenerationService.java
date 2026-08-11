@@ -41,23 +41,20 @@ public class OnDemandGenerationService {
     private static final Logger log = LoggerFactory.getLogger(OnDemandGenerationService.class);
     private static final ZoneId KST = ZoneId.of("Asia/Seoul");
 
-    private final GenerationClient generationClient;
+    private final GenerationSubmissionService submissionService;
     private final AgentWikiClient wikiClient;
-    private final GenerationPendingService pendingService;
     private final InterestService interestService;
     private final UserRepository userRepository;
     private final String contentType;
 
     public OnDemandGenerationService(
-            GenerationClient generationClient,
+            GenerationSubmissionService submissionService,
             AgentWikiClient wikiClient,
-            GenerationPendingService pendingService,
             InterestService interestService,
             UserRepository userRepository,
             @Value("${app.scheduler.generation.content-type:interest_news_card}") String contentType) {
-        this.generationClient = generationClient;
+        this.submissionService = submissionService;
         this.wikiClient = wikiClient;
-        this.pendingService = pendingService;
         this.interestService = interestService;
         this.userRepository = userRepository;
         this.contentType = contentType;
@@ -93,11 +90,10 @@ public class OnDemandGenerationService {
                 onDemandKey(userId, changeHistory), topic, contentType,
                 GenerationPendingService.REPORT_TYPE_ON_DEMAND, changeHistory);
         // agent 202 body 파싱 실패 시 null 일 수 있어 키로 쓰지 않는다 — 참고용으로만 내린다.
-        String agentJobId = generationClient.requestGeneration(userId, request);
-        // 접수 성공 후 펜딩 영속화(ON_DEMAND) — id 는 멱등키 파생이라 트리거 응답과 같은 값.
-        // 기록 실패는 삼켜져 접수 응답을 막지 않는다(register 내부 정책).
-        String id = pendingService.register(userId, request.idempotencyKey(),
-                GenerationPendingService.REPORT_TYPE_ON_DEMAND, topic, contentType, agentJobId);
+        GenerationSubmissionService.Submission submission = submissionService.submit(
+                userId, request, GenerationPendingService.REPORT_TYPE_ON_DEMAND, topic);
+        String id = submission.pendingId();
+        String agentJobId = submission.agentJobId();
         log.info("[OnDemandGeneration] 즉시 생성 요청 userId={}, topic={}, delta={}, idempotencyKey={}, id={}, agentJobId={}",
                 userId, topic, changeHistory, request.idempotencyKey(), id, agentJobId);
         return GenerationTriggerResponse.accepted(id, agentJobId);
