@@ -35,4 +35,25 @@ public interface NotificationRepository extends JpaRepository<Notification, Long
             @Param("body") String body,
             @Param("targetPath") String targetPath,
             @Param("reportType") String reportType);
+
+    /**
+     * 소셜 알림 범용 멱등 생성(FOLLOW 등). report_type 없음(리포트 아님).
+     * event_key 로 같은 이벤트는 한 번만 — 팔로우→언팔→재팔로우 반복 스팸을 DB 가 막는다.
+     */
+    @Modifying
+    @Query(value = """
+            INSERT INTO service.notifications (
+                user_id, event_key, type, title, body, target_path
+            ) VALUES (
+                :userId, :eventKey, :type, :title, :body, :targetPath
+            )
+            ON CONFLICT (user_id, event_key) DO NOTHING
+            """, nativeQuery = true)
+    int insertSocial(
+            @Param("userId") Long userId,
+            @Param("type") String type,
+            @Param("eventKey") String eventKey,
+            @Param("title") String title,
+            @Param("body") String body,
+            @Param("targetPath") String targetPath);
 }

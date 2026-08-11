@@ -6,6 +6,7 @@ import com.bambi.service.common.error.ErrorCode;
 import com.bambi.service.follow.dto.FollowResponse;
 import com.bambi.service.follow.dto.FollowUserResponse;
 import com.bambi.service.follow.dto.ProfileResponse;
+import com.bambi.service.notification.NotificationService;
 import com.bambi.service.user.User;
 import com.bambi.service.user.UserRepository;
 import org.springframework.stereotype.Service;
@@ -31,13 +32,16 @@ public class FollowService {
     private final FollowRepository followRepository;
     private final UserRepository userRepository;
     private final CardRepository cardRepository;
+    private final NotificationService notificationService;
 
     public FollowService(FollowRepository followRepository,
                          UserRepository userRepository,
-                         CardRepository cardRepository) {
+                         CardRepository cardRepository,
+                         NotificationService notificationService) {
         this.followRepository = followRepository;
         this.userRepository = userRepository;
         this.cardRepository = cardRepository;
+        this.notificationService = notificationService;
     }
 
     @Transactional
@@ -46,7 +50,13 @@ public class FollowService {
         if (followeeId.equals(followerId)) {
             throw new ApiException(ErrorCode.VALIDATION_ERROR, "자기 자신은 팔로우할 수 없습니다.");
         }
-        followRepository.insertIgnore(followerId, followeeId);   // 멱등
+        int inserted = followRepository.insertIgnore(followerId, followeeId);   // 멱등, 신규 관계면 1
+        if (inserted > 0) {
+            // 신규 팔로우일 때만 FOLLOW 알림(중복 팔로우는 0 → 스팸 방지). event_key 로 언팔→재팔로우도 1회로 묶인다.
+            userRepository.findById(followerId).ifPresent(follower ->
+                    notificationService.notifyFollow(
+                            followeeId, followerId, follower.getPublicId(), follower.getDisplayName()));
+        }
         return new FollowResponse(true, followRepository.countByFolloweeId(followeeId));
     }
 

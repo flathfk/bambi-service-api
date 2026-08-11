@@ -5,6 +5,7 @@ import com.bambi.service.common.error.ApiException;
 import com.bambi.service.common.error.ErrorCode;
 import com.bambi.service.follow.dto.FollowResponse;
 import com.bambi.service.follow.dto.FollowUserResponse;
+import com.bambi.service.notification.NotificationService;
 import com.bambi.service.user.User;
 import com.bambi.service.user.UserRepository;
 import org.junit.jupiter.api.Test;
@@ -32,7 +33,9 @@ class FollowServiceTest {
     private final FollowRepository followRepository = mock(FollowRepository.class);
     private final UserRepository userRepository = mock(UserRepository.class);
     private final CardRepository cardRepository = mock(CardRepository.class);
-    private final FollowService service = new FollowService(followRepository, userRepository, cardRepository);
+    private final NotificationService notificationService = mock(NotificationService.class);
+    private final FollowService service =
+            new FollowService(followRepository, userRepository, cardRepository, notificationService);
 
     @Test
     void 자기_자신은_팔로우할_수_없다() {
@@ -46,6 +49,38 @@ class FollowServiceTest {
         assertThat(ex).isNotNull();
         assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.VALIDATION_ERROR);
         verify(followRepository, never()).insertIgnore(anyLong(), anyLong());   // 저장 시도조차 없어야
+        verify(notificationService, never()).notifyFollow(any(), any(), any(), any());
+    }
+
+    @Test
+    void 신규_팔로우면_행위자정보로_FOLLOW_알림을_만든다() {
+        User target = mock(User.class);   // followee
+        when(target.getId()).thenReturn(2L);
+        when(userRepository.findByPublicIdAndDeletedAtIsNull(any())).thenReturn(Optional.of(target));
+        when(followRepository.insertIgnore(1L, 2L)).thenReturn(1);   // 신규 관계
+        User follower = mock(User.class);
+        UUID followerPublicId = UUID.randomUUID();
+        when(follower.getPublicId()).thenReturn(followerPublicId);
+        when(follower.getDisplayName()).thenReturn("파라미");
+        when(userRepository.findById(1L)).thenReturn(Optional.of(follower));
+
+        service.follow(1L, UUID.randomUUID().toString());
+
+        // followee=2 에게, 행위자(follower=1, 프로필 이동용 publicId, 표시명)로 알림
+        verify(notificationService).notifyFollow(2L, 1L, followerPublicId, "파라미");
+    }
+
+    @Test
+    void 중복_팔로우면_알림을_만들지_않는다() {
+        User target = mock(User.class);
+        when(target.getId()).thenReturn(2L);
+        when(userRepository.findByPublicIdAndDeletedAtIsNull(any())).thenReturn(Optional.of(target));
+        when(followRepository.insertIgnore(1L, 2L)).thenReturn(0);   // 이미 팔로우 중(멱등)
+
+        service.follow(1L, UUID.randomUUID().toString());
+
+        verify(notificationService, never()).notifyFollow(any(), any(), any(), any());
+        verify(userRepository, never()).findById(anyLong());   // 행위자 조회조차 안 함
     }
 
     @Test

@@ -44,6 +44,27 @@ public class NotificationService {
                 reportType);
     }
 
+    /**
+     * 팔로우 알림(FOLLOW). 팔로우당한 사용자(followeeId)에게 "행위자(follower)가 팔로우했다"를 알린다.
+     * 클릭하면 행위자 프로필로 이동하도록 targetPath = /users/{follower publicId}.
+     * event_key = follow:{followerId}:{followeeId} 로 팔로우당 1회 — 언팔→재팔로우 반복 스팸을 DB 가 막는다.
+     * @param actorPublicId 행위자(팔로워)의 publicId(UUID) — 프로필 이동 대상.
+     * @param actorDisplayName 행위자 표시명(없으면 대체 문구).
+     */
+    @Transactional
+    public void notifyFollow(Long followeeId, Long followerId,
+                             java.util.UUID actorPublicId, String actorDisplayName) {
+        String actor = (actorDisplayName != null && !actorDisplayName.isBlank())
+                ? actorDisplayName : "누군가";
+        notificationRepository.insertSocial(
+                followeeId,
+                "FOLLOW",
+                "follow:" + followerId + ":" + followeeId,
+                truncate(actor + "님이 회원님을 팔로우했어요", 200),
+                null,
+                "/users/" + actorPublicId);
+    }
+
     /** 최근 알림과 읽지 않은 개수를 반환한다. */
     @Transactional(readOnly = true)
     public NotificationListResponse list(Long userId) {
