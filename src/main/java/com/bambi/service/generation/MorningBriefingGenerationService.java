@@ -5,6 +5,8 @@ import com.bambi.service.generation.dto.GenerationRequest;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
+import java.time.LocalDate;
+import java.time.ZoneId;
 import java.util.List;
 import java.util.Optional;
 
@@ -19,6 +21,7 @@ public class MorningBriefingGenerationService {
 
     /** {@code topics}가 있을 때만 쓰는 카드 제목용 문구. */
     static final String TITLE_TOPIC = "오늘의 관심사 브리핑";
+    private static final ZoneId KST = ZoneId.of("Asia/Seoul");
 
     private final GenerationSubmissionService submissionService;
     private final BriefingTopicService briefingTopicService;
@@ -40,17 +43,26 @@ public class MorningBriefingGenerationService {
     public Optional<GenerationSubmissionService.Submission> submit(
             long userId,
             String idempotencyKey) {
-        List<String> topics = briefingTopicService.resolveForMorningBriefing(userId);
+        return submit(userId, idempotencyKey, LocalDate.now(KST));
+    }
+
+    /** 지정 날짜의 준비 Snapshot을 조회해 같은 날짜를 고정한 아침 브리핑을 접수한다. */
+    public Optional<GenerationSubmissionService.Submission> submit(
+            long userId,
+            String idempotencyKey,
+            LocalDate briefingDate) {
+        List<String> topics = briefingTopicService.resolveForMorningBriefing(userId, briefingDate);
         if (topics.isEmpty()) {
             return Optional.empty();
         }
 
-        GenerationRequest request = GenerationRequest.multiTopic(
+        GenerationRequest request = GenerationRequest.morningBriefing(
                 idempotencyKey,
                 TITLE_TOPIC,
                 topics,
                 contentType,
-                GenerationPendingService.REPORT_TYPE_MORNING_BRIEFING);
+                GenerationPendingService.REPORT_TYPE_MORNING_BRIEFING,
+                briefingDate);
         return Optional.of(submissionService.submit(
                 userId,
                 request,

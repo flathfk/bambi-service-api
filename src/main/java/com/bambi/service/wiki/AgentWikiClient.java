@@ -1,8 +1,10 @@
 package com.bambi.service.wiki;
 
 import com.bambi.service.agent.AgentErrors;
+import com.bambi.service.agent.dto.AgentAcceptedJob;
 import com.bambi.service.common.error.ApiException;
 import com.bambi.service.common.error.ErrorCode;
+import com.bambi.service.wiki.dto.BriefingPreparationRequest;
 import com.bambi.service.wiki.dto.BriefingTopicsSelection;
 import com.bambi.service.wiki.dto.WikiDocumentDetailResponse;
 import com.bambi.service.wiki.dto.WikiDocumentsResponse;
@@ -10,12 +12,15 @@ import com.bambi.service.wiki.dto.WikiGraphResponse;
 import com.bambi.service.wiki.dto.WikiTagsResponse;
 import com.bambi.service.wiki.dto.WikiTopNodesResponse;
 import com.bambi.service.wiki.dto.WikiResetResponse;
-import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
 import org.springframework.web.client.RestClientResponseException;
+
+import java.time.LocalDate;
+import java.util.UUID;
 
 /**
  * agent-api 개인 Wiki 조회·초기화 중계 클라이언트.
@@ -30,14 +35,11 @@ import org.springframework.web.client.RestClientResponseException;
 public class AgentWikiClient {
 
     private final RestClient restClient;
-    private final RestClient selectionRestClient;
     private final String internalPrefix;
 
     public AgentWikiClient(RestClient agentRestClient,
-                           @Qualifier("agentSelectionRestClient") RestClient agentSelectionRestClient,
                            @Value("${app.agent.internal-prefix}") String internalPrefix) {
         this.restClient = agentRestClient;
-        this.selectionRestClient = agentSelectionRestClient;
         this.internalPrefix = internalPrefix;
     }
 
@@ -52,16 +54,48 @@ public class AgentWikiClient {
      * <p>위키가 없는 사용자는 agent 가 404 를 준다. 그건 오류가 아니라 <b>정상 상태</b>라
      * 빈 결과로 바꿔 돌려주고, 호출부가 등록 관심사 폴백으로 넘어간다({@code getTags} 와 같은 정책).
      *
-     * <p><b>이 호출만 타임아웃이 길다.</b> agent 안에서 LLM 이 돌기 때문에 다른 위키 조회와 같은
-     * 3초로는 매번 타임아웃이 나고, 그러면 전원이 폴백으로 떨어져 "전환했는데 안 바뀐" 상태가 된다.
-     * 그래서 {@code agentSelectionRestClient} 를 쓴다 — 나머지 호출은 짧은 쪽 그대로다.
+     * <p>REPORT-022부터 이 GET은 준비 Worker가 저장한 Snapshot만 읽으며 LLM·외부 검색을
+     * 호출하지 않는다. Snapshot이 없으면 빈 결과를 반환해 등록 관심사 폴백으로 넘어간다.
      *
      * @param limit agent 계약상 1~5
      */
     public BriefingTopicsSelection getBriefingTopics(long userId, int limit) {
-        return getOrEmpty(selectionRestClient,
+        return getOrEmpty(
                 "/users/" + userId + "/briefing-topics?limit=" + limit,
                 BriefingTopicsSelection.class, BriefingTopicsSelection.empty());
+    }
+
+    /** 지정 KST 날짜에 준비된 아침 브리핑 주제를 DB에서 조회한다. */
+    public BriefingTopicsSelection getBriefingTopics(
+            long userId,
+            LocalDate briefingDate,
+            int limit) {
+        return getOrEmpty(
+                "/users/" + userId + "/briefing-topics?briefing_date=" + briefingDate
+                        + "&limit=" + limit,
+                BriefingTopicsSelection.class, BriefingTopicsSelection.empty());
+    }
+
+    /** 지정일 주제 선정과 Wiki·Global·Live 근거 예열을 비동기 Job으로 접수한다. */
+    public AgentAcceptedJob prepareBriefing(
+            long userId,
+            LocalDate briefingDate,
+            String idempotencyKey,
+            int limit) {
+        String path = internalPrefix + "/users/" + userId + "/briefing-preparations";
+        try {
+            return restClient.post()
+                    .uri(path)
+                    .header("X-Request-ID", UUID.randomUUID().toString())
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .body(new BriefingPreparationRequest(briefingDate, idempotencyKey, limit))
+                    .retrieve()
+                    .body(AgentAcceptedJob.class);
+        } catch (RestClientResponseException e) {
+            throw AgentErrors.unavailable(e, "agent 아침 브리핑 준비 요청 실패");
+        } catch (RestClientException e) {
+            throw AgentErrors.connectFailed(e);
+        }
     }
 
     /** 개인 Wiki 문서 목록(내부 schema 문서 포함 — 제외는 서비스가 한다). */
@@ -127,12 +161,8 @@ public class AgentWikiClient {
     }
 
     private <T> T getOrEmpty(String pathSuffix, Class<T> type, T emptyValue) {
-        return getOrEmpty(restClient, pathSuffix, type, emptyValue);
-    }
-
-    private <T> T getOrEmpty(RestClient client, String pathSuffix, Class<T> type, T emptyValue) {
         try {
-            return client.get()
+            return restClient.get()
                     .uri(internalPrefix + pathSuffix)
                     .retrieve()
                     .body(type);

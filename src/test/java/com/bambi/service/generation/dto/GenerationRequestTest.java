@@ -3,6 +3,7 @@ package com.bambi.service.generation.dto;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 
+import java.time.LocalDate;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -16,7 +17,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  */
 class GenerationRequestTest {
 
-    private final ObjectMapper mapper = new ObjectMapper();
+    private final ObjectMapper mapper = new ObjectMapper().findAndRegisterModules();
 
     @Test
     void 단일_주제는_topics_를_직렬화에서_생략한다() throws Exception {
@@ -83,6 +84,24 @@ class GenerationRequestTest {
 
         assertThat(json).contains("\"topic\":\"오늘의 관심사 브리핑\"");
         assertThat(json).contains("\"topics\":[\"폭염\",\"퇴근\"]");
+    }
+
+    @Test
+    void 아침_브리핑은_준비_Snapshot_날짜를_snake_case로_보낸다() throws Exception {
+        GenerationRequest request = GenerationRequest.morningBriefing(
+                "key-1", "오늘의 관심사 브리핑", List.of("폭염", "퇴근"),
+                "interest_news_card", "MORNING_BRIEFING", LocalDate.of(2026, 8, 12));
+
+        assertThat(mapper.writeValueAsString(request))
+                .contains("\"briefing_date\":\"2026-08-12\"");
+    }
+
+    @Test
+    void 아침_브리핑은_날짜_없는_요청을_거절한다() {
+        assertThatThrownBy(() -> GenerationRequest.morningBriefing(
+                "key-1", "오늘의 관심사 브리핑", List.of("폭염"),
+                "interest_news_card", "MORNING_BRIEFING", null))
+                .isInstanceOf(IllegalArgumentException.class);
     }
 
     @Test

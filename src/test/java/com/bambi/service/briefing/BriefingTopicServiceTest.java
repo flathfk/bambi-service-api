@@ -9,6 +9,7 @@ import com.bambi.service.wiki.dto.BriefingTopicsSelection;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
+import java.time.LocalDate;
 import java.util.Collections;
 import java.util.List;
 
@@ -147,6 +148,16 @@ class BriefingTopicServiceTest {
 
         assertThat(service.resolveForMorningBriefing(1L)).containsExactly("코스닥", "폭염");
         verifyNoInteractions(interestService);   // agent 가 골랐으면 폴백을 조회하지도 않는다
+    }
+
+    @Test
+    void 지정한_브리핑_날짜의_Snapshot을_조회한다() {
+        LocalDate date = LocalDate.of(2026, 8, 12);
+        when(wikiClient.getBriefingTopics(1L, date, BriefingTopicService.MAX_TOPICS))
+                .thenReturn(selection(List.of("반도체")));
+
+        assertThat(service.resolveForMorningBriefing(1L, date)).containsExactly("반도체");
+        verify(wikiClient).getBriefingTopics(1L, date, BriefingTopicService.MAX_TOPICS);
     }
 
     @Test

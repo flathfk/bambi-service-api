@@ -1,8 +1,10 @@
 package com.bambi.service.generation.dto;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
+import com.fasterxml.jackson.annotation.JsonFormat;
 import com.fasterxml.jackson.annotation.JsonProperty;
 
+import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.util.List;
 
@@ -27,6 +29,7 @@ import java.util.List;
  * @param topics         한 리포트가 함께 다룰 주제 목록(최대 5개). 순서가 곧 리포트 섹션 순서다.
  *                       비어 있으면 직렬화에서 생략돼 기존 단일 주제 동작 그대로다.
  * @param contentType    기본 interest_news_card.
+ * @param briefingDate   준비 Snapshot을 조회할 KST 날짜. 아침 브리핑 요청에서만 명시한다.
  * @param language       생략 시 컨텍스트의 선호 언어.
  * @param scheduledAt    실행 예약 시각. **시간대 필수** (예: 2026-07-30T07:00:00+09:00). null 이면 즉시 실행 대상.
  * @param reportType     생성 유형 (2026-08-06 계약: MORNING_BRIEFING | ON_DEMAND | ONBOARDING).
@@ -45,6 +48,8 @@ public record GenerationRequest(
         @JsonProperty("topic") String topic,
         @JsonProperty("topics") List<String> topics,
         @JsonProperty("content_type") String contentType,
+        @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "yyyy-MM-dd")
+        @JsonProperty("briefing_date") LocalDate briefingDate,
         @JsonProperty("language") String language,
         @JsonProperty("scheduled_at") OffsetDateTime scheduledAt,
         @JsonProperty("report_type") String reportType,
@@ -70,7 +75,7 @@ public record GenerationRequest(
                                                 String contentType, String reportType,
                                                 boolean changeHistory) {
         return new GenerationRequest(idempotencyKey, null, null, searchTopic, List.of(), contentType,
-                null, null, reportType, changeHistory ? Boolean.TRUE : null);
+                null, null, null, reportType, changeHistory ? Boolean.TRUE : null);
     }
 
     /**
@@ -90,7 +95,27 @@ public record GenerationRequest(
         // 아침 브리핑에는 Delta 를 켜지 않는다. 둘 다 "기존 생성 경로를 대체"라서 어느 쪽이
         // 이기는지 계약에 정의가 없다(agent-api #12 / #20). 온디맨드에서만 선택한다.
         return new GenerationRequest(idempotencyKey, null, null, titleTopic,
-                List.copyOf(topics), contentType, null, null, reportType, null);
+                List.copyOf(topics), contentType, null, null, null, reportType, null);
+    }
+
+    /** 준비 Snapshot 날짜를 고정한 아침 브리핑 다중 주제 요청을 만든다. */
+    public static GenerationRequest morningBriefing(
+            String idempotencyKey,
+            String titleTopic,
+            List<String> topics,
+            String contentType,
+            String reportType,
+            LocalDate briefingDate) {
+        if (briefingDate == null) {
+            throw new IllegalArgumentException("아침 브리핑 생성에는 briefingDate가 필요하다.");
+        }
+        GenerationRequest request = multiTopic(
+                idempotencyKey, titleTopic, topics, contentType, reportType);
+        return new GenerationRequest(
+                request.idempotencyKey(), request.generationScope(), request.interestId(),
+                request.topic(), request.topics(), request.contentType(), briefingDate,
+                request.language(), request.scheduledAt(), request.reportType(),
+                request.changeHistoryEnabled());
     }
 
     /**
@@ -103,6 +128,6 @@ public record GenerationRequest(
             throw new IllegalArgumentException("INTEREST_BUNDLE에는 현재 활성 interestId가 필요하다.");
         }
         return new GenerationRequest(idempotencyKey, "INTEREST_BUNDLE", interestId.strip(),
-                null, List.of(), contentType, null, null, reportType, null);
+                null, List.of(), contentType, null, null, null, reportType, null);
     }
 }

@@ -2,6 +2,7 @@ package com.bambi.service.wiki;
 
 import com.bambi.service.common.error.ApiException;
 import com.bambi.service.common.error.ErrorCode;
+import com.bambi.service.agent.dto.AgentAcceptedJob;
 import com.bambi.service.wiki.dto.BriefingTopicsSelection;
 import com.bambi.service.wiki.dto.WikiDocumentDetailResponse;
 import com.bambi.service.wiki.dto.WikiDocumentsResponse;
@@ -17,9 +18,12 @@ import org.springframework.http.MediaType;
 import org.springframework.test.web.client.MockRestServiceServer;
 import org.springframework.web.client.RestClient;
 
+import java.time.LocalDate;
+
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.method;
+import static org.springframework.test.web.client.match.MockRestRequestMatchers.content;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.requestTo;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withStatus;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
@@ -40,7 +44,7 @@ class AgentWikiClientTest {
         RestClient restClient = builder.build();
         // 운영에서는 주제 선정만 타임아웃이 긴 별도 빈을 쓴다. 여기서는 같은 Mock 서버에
         // 물려 두 경로가 같은 규약(경로·404 정규화)을 지키는지 한 번에 검증한다.
-        client = new AgentWikiClient(restClient, restClient, "/internal/v1");
+        client = new AgentWikiClient(restClient, "/internal/v1");
     }
 
     @Test
@@ -198,6 +202,42 @@ class AgentWikiClientTest {
         assertThat(selection.normalizedTopics()).containsExactly("코스닥", "폭염", "웹툰");
         assertThat(selection.candidateCount()).isEqualTo(19);
         assertThat(selection.reasonOrEmpty()).isEqualTo("최근 저장한 글이 시장·날씨에 몰려 있다");
+    }
+
+    @Test
+    @DisplayName("아침 주제 조회: 준비 Snapshot 날짜를 명시해 조회한다")
+    void getBriefingTopicsPassesBriefingDate() {
+        server.expect(requestTo("http://agent.local/internal/v1/users/7/briefing-topics"
+                        + "?briefing_date=2026-08-12&limit=3"))
+                .andExpect(method(HttpMethod.GET))
+                .andRespond(withSuccess(
+                        "{\"user_id\":\"7\",\"topics\":[\"반도체\"],"
+                                + "\"reason\":\"준비됨\",\"candidate_count\":4}",
+                        MediaType.APPLICATION_JSON));
+
+        BriefingTopicsSelection selection = client.getBriefingTopics(
+                7L, LocalDate.of(2026, 8, 12), 3);
+
+        assertThat(selection.normalizedTopics()).containsExactly("반도체");
+    }
+
+    @Test
+    @DisplayName("아침 준비: 날짜·멱등키·상한을 비동기 준비 엔드포인트에 보낸다")
+    void prepareBriefingPostsPreparationContract() {
+        server.expect(requestTo("http://agent.local/internal/v1/users/7/briefing-preparations"))
+                .andExpect(method(HttpMethod.POST))
+                .andExpect(content().json("""
+                        {"briefing_date":"2026-08-12","idempotency_key":"prep-7","limit":3}
+                        """))
+                .andRespond(withSuccess(
+                        "{\"job_id\":\"job-7\",\"status\":\"PENDING\",\"feature_id\":\"REPORT-022\"}",
+                        MediaType.APPLICATION_JSON));
+
+        AgentAcceptedJob accepted = client.prepareBriefing(
+                7L, LocalDate.of(2026, 8, 12), "prep-7", 3);
+
+        assertThat(accepted.jobId()).isEqualTo("job-7");
+        assertThat(accepted.status()).isEqualTo("PENDING");
     }
 
     @Test

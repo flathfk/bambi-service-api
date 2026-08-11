@@ -11,9 +11,11 @@ import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.function.Supplier;
 
 /**
  * 아침 브리핑 주제 결정 (2026-08-11 (B) 확정).
@@ -73,9 +75,17 @@ public class BriefingTopicService {
     @Transactional(readOnly = true)
     public List<String> resolveForMorningBriefing(Long userId) {
         List<String> selected = selectFromWikiContext(userId);
-        if (!selected.isEmpty()) {
-            return selected;
-        }
+        return selected.isEmpty() ? fallbackInterests(userId) : selected;
+    }
+
+    /** 지정 브리핑 날짜에 준비된 주제를 읽고 없으면 등록 관심사로 폴백한다. */
+    @Transactional(readOnly = true)
+    public List<String> resolveForMorningBriefing(Long userId, LocalDate briefingDate) {
+        List<String> selected = selectFromWikiContext(userId, briefingDate);
+        return selected.isEmpty() ? fallbackInterests(userId) : selected;
+    }
+
+    private List<String> fallbackInterests(Long userId) {
         return interestService.list(userId).stream()
                 .map(InterestResponse::name)
                 .filter(name -> name != null && !name.isBlank())
@@ -89,15 +99,27 @@ public class BriefingTopicService {
      * <p>선정 근거({@code reason})를 로그에 남긴다. 결과만 봐서는 왜 그 주제가 뽑혔는지 알 수 없어서,
      * "아침에 이상한 주제가 나갔다"는 신고가 들어왔을 때 이 줄이 유일한 단서다.
      *
-     * <p><b>공개인 이유</b> — {@link BriefingTopicPrefetchScheduler} 가 새벽에 이 단계만 미리 부른다
-     * (2026-08-11 유림 요청). 예열은 <b>agent 선정</b>을 앞당기는 것이라 폴백까지 포함한
-     * {@link #resolveForMorningBriefing} 이 아니라 1단계 단독이어야 한다 — 폴백 결과(등록 관심사)는
-     * agent 에 전달되지 않아 미리 불러 봐야 수집이 걸리지 않는다.
+     * <p>REPORT-022부터 새벽 준비는 별도 비동기 Job이 담당하고, 이 메서드는 준비된 Snapshot을
+     * 읽는 경계로만 남는다.
      */
     public List<String> selectFromWikiContext(Long userId) {
+        return selectFromWikiContext(
+                userId, () -> wikiClient.getBriefingTopics(userId, MAX_TOPICS));
+    }
+
+    /** 지정 날짜 Snapshot의 Agent 선정 결과를 읽는다. */
+    public List<String> selectFromWikiContext(Long userId, LocalDate briefingDate) {
+        return selectFromWikiContext(
+                userId,
+                () -> wikiClient.getBriefingTopics(userId, briefingDate, MAX_TOPICS));
+    }
+
+    private List<String> selectFromWikiContext(
+            Long userId,
+            Supplier<BriefingTopicsSelection> selectionLoader) {
         BriefingTopicsSelection selection;
         try {
-            selection = wikiClient.getBriefingTopics(userId, MAX_TOPICS);
+            selection = selectionLoader.get();
         } catch (RuntimeException e) {
             // agent 장애로 그날 아침 전체가 멈추면 안 된다 — 등록 관심사로 넘어간다.
             log.warn("[BriefingTopic] agent 주제 선정 실패 userId={} — 등록 관심사로 폴백", userId, e);
