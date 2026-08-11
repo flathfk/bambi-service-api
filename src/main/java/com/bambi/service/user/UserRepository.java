@@ -2,6 +2,8 @@ package com.bambi.service.user;
 
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.repository.query.Param;
 
 import java.time.OffsetDateTime;
 import java.util.Collection;
@@ -39,4 +41,13 @@ public interface UserRepository extends JpaRepository<User, Long> {
     /** 살아있는 사용자 id 목록 — 생성 스케줄러가 사용자별 생성 요청을 돌릴 때 쓴다(엔티티 전체 로딩 회피). */
     @Query("select u.id from User u where u.deletedAt is null")
     List<Long> findAllActiveIds();
+
+    /** 스케줄 Outbox 발행용 — 활성 사용자 ID를 전체 적재하지 않고 키셋 페이지로 읽는다. */
+    @Query("""
+            select u.id
+            from User u
+            where u.deletedAt is null and u.id > :afterId
+            order by u.id
+            """)
+    List<Long> findActiveIdsAfter(@Param("afterId") long afterId, Pageable pageable);
 }

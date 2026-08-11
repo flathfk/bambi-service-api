@@ -102,6 +102,9 @@ app:
       batch-limit: ${WORKER_BATCH_LIMIT:50}
       lease-seconds: ${WORKER_LEASE_SECONDS:120}
   scheduler:
+    generation-outbox:
+      # 스케줄 시각에는 외부 API를 호출하지 않고 활성 사용자를 키셋 페이지로 Outbox에 적재한다.
+      user-page-size: ${SCHEDULER_GENERATION_OUTBOX_USER_PAGE_SIZE:500}
     # 콘텐츠 생성 트리거 (송우 가이드 §3.4 — 지정 시각에 사용자별 생성 요청)
     generation:
       # 기본 비활성(실제 생성 연동 P1 전까지 Mock 로깅). 켜려면 true.
