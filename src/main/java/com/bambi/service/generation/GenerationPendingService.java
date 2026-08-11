@@ -15,7 +15,7 @@ import java.util.List;
 import java.util.UUID;
 
 /**
- * 생성 접수(펜딩) 기록·조회 — 온디맨드/스케줄러 공용 접수 레이어 (2026-08-06 합의, 우석).
+ * 생성 접수(펜딩) 기록·조회 — 온디맨드/아침 스케줄러/온보딩 공용 접수 레이어.
  *
  * <p>접수 기록은 agent 202 접수가 끝난 뒤에 남긴다(실패한 요청이 유령 펜딩을 만들지 않게).
  * 기록 실패는 접수 자체를 되돌리지 않는다 — agent Job 은 이미 등록됐으므로 warn 만 남긴다
@@ -31,6 +31,8 @@ public class GenerationPendingService {
     public static final String REPORT_TYPE_MORNING_BRIEFING = "MORNING_BRIEFING";
     /** 생성 유형 값 (2026-08-06 계약): 사용자 즉시 생성. */
     public static final String REPORT_TYPE_ON_DEMAND = "ON_DEMAND";
+    /** 생성 유형 값: 회원가입 온보딩 완료 직후 생성. */
+    public static final String REPORT_TYPE_ONBOARDING = "ONBOARDING";
 
     private static final Logger log = LoggerFactory.getLogger(GenerationPendingService.class);
     private static final Duration ACTIVE_VISIBLE_WINDOW = Duration.ofHours(6);

@@ -51,6 +51,7 @@ class AgentContextSyncServiceTest {
         verify(agentGateway).syncUserContext(anyLong(), captor.capture());
         assertThat(captor.getValue().contextVersion()).isEqualTo(1);
         assertThat(captor.getValue().signupInterests()).isEmpty();
+        assertThat(captor.getValue().onboardingReportsManagedByService()).isTrue();
     }
 
     @Test
@@ -74,6 +75,23 @@ class AgentContextSyncServiceTest {
         assertThat(request.signupInterests().get(0).topics()).containsExactly("AI·머신러닝");
         assertThat(request.signupInterests().get(1).category()).isNull();
         assertThat(request.signupInterests().get(1).topics()).containsExactly("양자 센서 스타트업");
+    }
+
+    @Test
+    void 온보딩_선택_순서를_그대로_보존해_context를_만든다() {
+        Interest first = Interest.fromTaxonomy(
+                1L, "AI·머신러닝", "1.0.0-draft", "tech", "ai_ml");
+        Interest second = Interest.fromTaxonomy(
+                1L, "반도체", "1.0.0-draft", "tech", "semiconductor");
+
+        service.syncUserContext(1L, List.of(second, first));
+
+        ArgumentCaptor<AgentContextRequest> captor = ArgumentCaptor.forClass(AgentContextRequest.class);
+        verify(agentGateway).syncUserContext(anyLong(), captor.capture());
+        AgentContextRequest request = captor.getValue();
+        assertThat(request.selectedTopicIds()).containsExactly("semiconductor", "ai_ml");
+        assertThat(request.signupInterests().get(0).topics())
+                .containsExactly("반도체", "AI·머신러닝");
     }
 
     @Test

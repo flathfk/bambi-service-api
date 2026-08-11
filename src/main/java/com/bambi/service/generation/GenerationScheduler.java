@@ -42,22 +42,19 @@ public class GenerationScheduler {
      */
     static final String TITLE_TOPIC = "오늘의 관심사 브리핑";
 
-    private final GenerationClient generationClient;
+    private final GenerationSubmissionService submissionService;
     private final UserRepository userRepository;
     private final BriefingTopicService briefingTopicService;
-    private final GenerationPendingService pendingService;
     private final String contentType;
 
     public GenerationScheduler(
-            GenerationClient generationClient,
+            GenerationSubmissionService submissionService,
             UserRepository userRepository,
             BriefingTopicService briefingTopicService,
-            GenerationPendingService pendingService,
             @Value("${app.scheduler.generation.content-type:interest_news_card}") String contentType) {
-        this.generationClient = generationClient;
+        this.submissionService = submissionService;
         this.userRepository = userRepository;
         this.briefingTopicService = briefingTopicService;
-        this.pendingService = pendingService;
         this.contentType = contentType;
     }
 
@@ -86,15 +83,13 @@ public class GenerationScheduler {
                         topics,
                         contentType,
                         GenerationPendingService.REPORT_TYPE_MORNING_BRIEFING);  // agent 가 snapshot 에 에코
-                String agentJobId = generationClient.requestGeneration(userId, request);
-                // 접수 성공 후 펜딩 영속화(MORNING_BRIEFING) — 온디맨드와 같은 결정적 id 규칙.
-                // 재실행·재시도는 같은 멱등키 → 같은 id 라 중복 행이 생기지 않는다.
-                //
                 // ⚠️ 슬롯 제목은 TITLE_TOPIC 이 아니라 topics[0] 이다. 고정 문구를 저장하면
                 // 모든 사용자의 "처리중" 슬롯이 같은 문구가 되어 무엇을 만드는 중인지 안 보인다.
-                pendingService.register(userId, request.idempotencyKey(),
+                submissionService.submit(
+                        userId,
+                        request,
                         GenerationPendingService.REPORT_TYPE_MORNING_BRIEFING,
-                        topics.get(0), contentType, agentJobId);
+                        topics.get(0));
                 requested++;
             } catch (Exception e) {
                 // agent 다운/일부 실패는 전체를 막지 않는다(컨텍스트 동기화 패턴과 동일).

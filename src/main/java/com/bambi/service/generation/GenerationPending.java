@@ -33,7 +33,7 @@ public class GenerationPending {
     @Column(name = "idempotency_key", nullable = false, length = 200)
     private String idempotencyKey;
 
-    // 생성 유형(MORNING_BRIEFING|ON_DEMAND) — 접수 시점에 service 가 직접 아는 값.
+    // 생성 유형(MORNING_BRIEFING|ON_DEMAND|ONBOARDING) — 접수 시점에 service 가 직접 아는 값.
     @Column(name = "report_type", length = 30)
     private String reportType;
 

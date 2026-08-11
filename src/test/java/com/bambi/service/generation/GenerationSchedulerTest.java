@@ -36,8 +36,10 @@ class GenerationSchedulerTest {
     // 펜딩 접수 레이어 — 실제 구현 + repo mock (기록 실패 삼킴 정책까지 그대로 태운다).
     private final GenerationPendingRepository pendingRepository = mock(GenerationPendingRepository.class);
     private final GenerationPendingService pendingService = new GenerationPendingService(pendingRepository);
+    private final GenerationSubmissionService submissionService =
+            new GenerationSubmissionService(client, pendingService);
     private final GenerationScheduler scheduler =
-            new GenerationScheduler(client, userRepository, briefingTopicService, pendingService,
+            new GenerationScheduler(submissionService, userRepository, briefingTopicService,
                     "interest_news_card");
 
     @Test

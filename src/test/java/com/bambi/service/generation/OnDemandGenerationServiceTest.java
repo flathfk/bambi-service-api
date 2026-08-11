@@ -34,13 +34,15 @@ class OnDemandGenerationServiceTest {
     // 펜딩 접수 레이어 — id 파생 로직이 응답 id 와 결합돼 있어 실제 구현 + repo mock 으로 검증한다.
     private final GenerationPendingRepository pendingRepository = mock(GenerationPendingRepository.class);
     private final GenerationPendingService pendingService = new GenerationPendingService(pendingRepository);
+    private final GenerationSubmissionService submissionService =
+            new GenerationSubmissionService(generationClient, pendingService);
     private final com.bambi.service.interest.InterestService interestService =
             mock(com.bambi.service.interest.InterestService.class);
     // 계정 Delta 설정 조회용(V22). 기본 mock 은 Optional.empty → 설정 없음 = Delta 꺼짐.
     private final com.bambi.service.user.UserRepository userRepository =
             mock(com.bambi.service.user.UserRepository.class);
     private final OnDemandGenerationService service = new OnDemandGenerationService(
-            generationClient, wikiClient, pendingService, interestService, userRepository,
+            submissionService, wikiClient, interestService, userRepository,
             "interest_news_card");
 
     /** 계정 Delta 설정이 주어진 사용자 — findById mock 용. */
@@ -277,4 +279,3 @@ class OnDemandGenerationServiceTest {
         assertThat(sent.get(1).idempotencyKey()).endsWith("-delta");
     }
 }
-

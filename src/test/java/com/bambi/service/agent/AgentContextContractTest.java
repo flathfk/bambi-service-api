@@ -79,6 +79,7 @@ class AgentContextContractTest {
                 .andExpect(jsonPath("$.blocked_interest_ids").value(empty()))
                 .andExpect(jsonPath("$.blocked_source_ids").value(empty()))
                 .andExpect(jsonPath("$.signup_interests").value(empty()))
+                .andExpect(jsonPath("$.onboarding_reports_managed_by_service").value(true))
                 .andRespond(withSuccess("{\"context_version\":1}", MediaType.APPLICATION_JSON));
 
         gateway.syncUserContext(7, AgentContextRequest.forVersion(1));
@@ -139,6 +140,7 @@ class AgentContextContractTest {
                 .andExpect(jsonPath("$.blockedInterestIds").doesNotExist())
                 .andExpect(jsonPath("$.blockedSourceIds").doesNotExist())
                 .andExpect(jsonPath("$.signupInterests").doesNotExist())
+                .andExpect(jsonPath("$.onboardingReportsManagedByService").doesNotExist())
                 .andRespond(withSuccess("{\"context_version\":1}", MediaType.APPLICATION_JSON));
 
         gateway.syncUserContext(7, AgentContextRequest.forVersion(1));

@@ -53,11 +53,19 @@ public class AgentContextSyncService {
      * 다음 재시도가 더 큰 버전으로 반영한다.
      */
     public void syncUserContext(long userId) {
-        InterestTaxonomyResponse taxonomy = taxonomyService.getActiveTaxonomy();
-        agentGateway.syncInterestTaxonomy(AgentInterestTaxonomyRequest.from(taxonomy));
         List<Interest> interests = interestRepository
                 .findByUserIdAndSourceAndDeletedAtIsNullOrderByNameAsc(userId, InterestSource.USER);
-        ContextInterests contextInterests = buildContextInterests(taxonomy, interests);
+        syncUserContext(userId, interests);
+    }
+
+    /**
+     * 호출자가 정한 관심사 순서를 보존해 Agent 컨텍스트를 동기화한다.
+     * 온보딩 완료 시 선택 순서가 리포트 선정 규칙의 최종 동률 기준이므로 이 경로를 사용한다.
+     */
+    public void syncUserContext(long userId, List<Interest> orderedInterests) {
+        InterestTaxonomyResponse taxonomy = taxonomyService.getActiveTaxonomy();
+        agentGateway.syncInterestTaxonomy(AgentInterestTaxonomyRequest.from(taxonomy));
+        ContextInterests contextInterests = buildContextInterests(taxonomy, orderedInterests);
         int version = versionAllocator.allocate(userId);
         try {
             agentGateway.syncUserContext(userId, toRequest(version, contextInterests));
