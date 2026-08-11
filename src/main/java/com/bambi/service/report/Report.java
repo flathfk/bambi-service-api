@@ -56,6 +56,18 @@ public class Report {
     @Column(name = "report_type", length = 30)
     private String reportType;
 
+    @Column(name = "cover_image_url")
+    private String coverImageUrl;
+
+    @Column(name = "cover_image_source_url")
+    private String coverImageSourceUrl;
+
+    @Column(name = "cover_image_source_title", length = 500)
+    private String coverImageSourceTitle;
+
+    @Column(name = "cover_image_reference", length = 20)
+    private String coverImageReference;
+
     @OneToMany(mappedBy = "report", cascade = CascadeType.ALL, orphanRemoval = true)
     @BatchSize(size = 100)
     private List<ReportCitation> citations = new ArrayList<>();
@@ -102,6 +114,15 @@ public class Report {
         }
     }
 
+    /** 대표 이미지와 실제 인용 출처를 함께 교체한다. null 값은 이전 선택을 지운다. */
+    public void applyCoverImage(
+            String imageUrl, String sourceUrl, String sourceTitle, String reference) {
+        this.coverImageUrl = imageUrl;
+        this.coverImageSourceUrl = sourceUrl;
+        this.coverImageSourceTitle = sourceTitle;
+        this.coverImageReference = reference;
+    }
+
     /** 발행 재수신(더 큰 version)으로 본문을 갱신. 인용은 통째로 교체한다. */
     public void updateBody(Integer version, String title, String summary, String body) {
         this.externalVersion = version;
@@ -141,6 +162,22 @@ public class Report {
 
     public String getReportType() {
         return reportType;
+    }
+
+    public String getCoverImageUrl() {
+        return coverImageUrl;
+    }
+
+    public String getCoverImageSourceUrl() {
+        return coverImageSourceUrl;
+    }
+
+    public String getCoverImageSourceTitle() {
+        return coverImageSourceTitle;
+    }
+
+    public String getCoverImageReference() {
+        return coverImageReference;
     }
 
     public List<ReportCitation> getCitations() {

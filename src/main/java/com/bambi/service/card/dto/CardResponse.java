@@ -1,6 +1,8 @@
 package com.bambi.service.card.dto;
 
 import com.bambi.service.card.Card;
+import com.bambi.service.report.Report;
+import com.bambi.service.report.dto.ReportCoverImageResponse;
 import com.bambi.service.user.User;
 
 import java.time.OffsetDateTime;
@@ -24,6 +26,7 @@ import java.util.UUID;
 public record CardResponse(
         UUID publicId,
         UUID reportId,
+        ReportCoverImageResponse coverImage,
         String title,
         String summary,
         String whyForYou,
@@ -61,6 +64,7 @@ public record CardResponse(
         return new CardResponse(
                 card.getPublicId(),
                 reportPublicId,
+                null,
                 card.getTitle(),
                 card.getSummary(),
                 card.getWhyForYou(),
@@ -76,11 +80,12 @@ public record CardResponse(
     }
 
     /** 단건 상세용 — 작성자·좋아요·스크랩까지 채운다. liked·scrapped 는 게스트(viewer 없음)면 false. */
-    public static CardResponse forDetail(Card card, UUID reportPublicId,
+    public static CardResponse forDetail(Card card, Report report,
                                          User author, long likeCount, boolean liked, boolean scrapped) {
         return new CardResponse(
                 card.getPublicId(),
-                reportPublicId,
+                report != null ? report.getPublicId() : null,
+                ReportCoverImageResponse.from(report),
                 card.getTitle(),
                 card.getSummary(),
                 card.getWhyForYou(),

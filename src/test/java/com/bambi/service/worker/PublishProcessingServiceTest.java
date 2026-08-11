@@ -83,6 +83,31 @@ class PublishProcessingServiceTest {
     }
 
     @Test
+    void 대표_이미지와_실제_인용_출처를_리포트에_저장한다() {
+        when(cardRepository.findByUserIdAndExternalContentId(1L, "c1")).thenReturn(Optional.empty());
+        when(reportRepository.findByUserIdAndExternalContentId(1L, "c1")).thenReturn(Optional.empty());
+        when(reportRepository.save(any(Report.class))).thenAnswer(inv -> inv.getArgument(0));
+        PublishItem item = new PublishItem(
+                "c1", "1", 1, "hash-1", "제목", "요약", "본문",
+                List.of(), List.of(), List.of(), null, null, null, null, null, null,
+                new PublishItem.CoverImage(
+                        "https://cdn.example.com/cover.jpg",
+                        "https://news.example.com/article",
+                        "기사 제목",
+                        "G1"));
+
+        service.upsert(item);
+
+        ArgumentCaptor<Report> reportCaptor = ArgumentCaptor.forClass(Report.class);
+        verify(reportRepository).save(reportCaptor.capture());
+        Report report = reportCaptor.getValue();
+        assertThat(report.getCoverImageUrl()).isEqualTo("https://cdn.example.com/cover.jpg");
+        assertThat(report.getCoverImageSourceUrl()).isEqualTo("https://news.example.com/article");
+        assertThat(report.getCoverImageSourceTitle()).isEqualTo("기사 제목");
+        assertThat(report.getCoverImageReference()).isEqualTo("G1");
+    }
+
+    @Test
     void report_type이_오면_리포트와_카드에_저장하고_알림에도_싣는다() {
         when(cardRepository.findByUserIdAndExternalContentId(1L, "c1")).thenReturn(Optional.empty());
         when(reportRepository.findByUserIdAndExternalContentId(1L, "c1")).thenReturn(Optional.empty());

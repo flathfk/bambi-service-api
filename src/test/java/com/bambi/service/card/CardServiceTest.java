@@ -3,6 +3,7 @@ package com.bambi.service.card;
 import com.bambi.service.card.dto.CardResponse;
 import com.bambi.service.common.error.ApiException;
 import com.bambi.service.common.error.ErrorCode;
+import com.bambi.service.report.Report;
 import org.junit.jupiter.api.Test;
 
 import java.util.Optional;
@@ -109,6 +110,27 @@ class CardServiceTest {
         assertThat(res.likeCount()).isEqualTo(3L);
         assertThat(res.liked()).isTrue();
         assertThat(res.author()).isNotNull();   // 작성자 미조회(null user)여도 null 필드로 감싼 객체 반환
+    }
+
+    @Test
+    void 단건_상세는_연결된_리포트의_대표_이미지를_함께_내린다() {
+        Card mine = card(1L, "PRIVATE");
+        when(mine.getReportId()).thenReturn(7L);
+        when(cardRepository.findByPublicIdAndDeletedAtIsNull(any())).thenReturn(Optional.of(mine));
+        Report report = mock(Report.class);
+        when(report.getPublicId()).thenReturn(UUID.randomUUID());
+        when(report.getCoverImageUrl()).thenReturn("https://cdn.example.com/cover.jpg");
+        when(report.getCoverImageSourceUrl()).thenReturn("https://news.example.com/article");
+        when(report.getCoverImageSourceTitle()).thenReturn("기사 제목");
+        when(report.getCoverImageReference()).thenReturn("G1");
+        when(reportRepository.findById(7L)).thenReturn(Optional.of(report));
+
+        CardResponse res = service.get(1L, UUID.randomUUID().toString());
+
+        assertThat(res.reportId()).isEqualTo(report.getPublicId());
+        assertThat(res.coverImage()).isNotNull();
+        assertThat(res.coverImage().url()).isEqualTo("https://cdn.example.com/cover.jpg");
+        assertThat(res.coverImage().sourceUrl()).isEqualTo("https://news.example.com/article");
     }
 
     @Test
