@@ -18,6 +18,7 @@ import java.util.List;
  * @param blockedInterestIds     사용자가 차단(삭제)한 관심사 ID 목록
  * @param blockedSourceIds       사용자가 차단(삭제)한 소스 ID 목록
  * @param signupInterests        온보딩에서 사용자가 직접 설정한 관심사 목록
+ * @param onboardingReportsManagedByService Service가 온보딩 리포트 생성·펜딩 상태를 소유하는지 여부
  */
 public record AgentContextRequest(
         @JsonProperty("context_version") int contextVersion,
@@ -29,7 +30,9 @@ public record AgentContextRequest(
         @JsonProperty("selected_topic_ids") List<String> selectedTopicIds,
         @JsonProperty("blocked_interest_ids") List<String> blockedInterestIds,
         @JsonProperty("blocked_source_ids") List<String> blockedSourceIds,
-        @JsonProperty("signup_interests") List<AgentSignupInterest> signupInterests) {
+        @JsonProperty("signup_interests") List<AgentSignupInterest> signupInterests,
+        @JsonProperty("onboarding_reports_managed_by_service")
+        boolean onboardingReportsManagedByService) {
 
     /**
      * 지정 버전의 컨텍스트 요청. 필드 값은 현재 알려진 사용자 컨텍스트를 싣는다 —
@@ -65,6 +68,7 @@ public record AgentContextRequest(
                 List.copyOf(selectedTopicIds),
                 List.of(),
                 List.of(),
-                List.copyOf(signupInterests));
+                List.copyOf(signupInterests),
+                true);
     }
 }

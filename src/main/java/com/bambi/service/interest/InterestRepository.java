@@ -16,6 +16,9 @@ public interface InterestRepository extends JpaRepository<Interest, Long> {
     List<Interest> findByUserIdAndSourceAndDeletedAtIsNullOrderByNameAsc(
             Long userId, InterestSource source);
 
+    /** 온보딩 완료 요청의 선택 순서를 검증·복원할 활성 사용자 관심사 목록. */
+    List<Interest> findByUserIdAndSourceAndDeletedAtIsNull(Long userId, InterestSource source);
+
     Optional<Interest> findByIdAndUserIdAndDeletedAtIsNull(Long id, Long userId);
 
     /** 같은 유저의 살아있는 동일 이름 중복 방지 (DB 유니크 인덱스 uq_interests_user_name 의 사전 검사) */

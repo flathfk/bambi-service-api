@@ -58,7 +58,7 @@ public class OnDemandGenerationController {
     /**
      * 본인 활성 생성 접수 목록 — 기존 홈 "처리중" 슬롯 API 호환용.
      * status 는 PENDING/RUNNING/PUBLISHING 중 하나다.
-     * reportType(MORNING_BRIEFING|ON_DEMAND)은 접수 시점 값이라 항상 채워진다.
+     * reportType(MORNING_BRIEFING|ON_DEMAND|ONBOARDING)은 접수 시점 값이라 항상 채워진다.
      */
     @GetMapping("/pending")
     public ApiResponse<List<GenerationPendingResponse>> pending(@AuthenticationPrincipal AuthPrincipal principal) {
