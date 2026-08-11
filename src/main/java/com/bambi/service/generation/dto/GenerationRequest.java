@@ -20,6 +20,9 @@ import java.util.List;
  * (2026-08-05 유림 확인). 두 값은 항상 같이 판단해야 해서 정적 팩토리로만 만들게 했다.
  *
  * @param idempotencyKey {날짜윈도우}-{userId}-{contentType} 규칙 — 스케줄러 재시도·중복 실행에도 Job 1개.
+ * @param generationScope 생략 시 기존 단일·다중 주제 생성. {@code INTEREST_BUNDLE}이면 현재 활성
+ *                       Wiki 관심사와 연결 노드 묶음을 사용한다.
+ * @param interestId     {@code INTEREST_BUNDLE}에서 사용할 현재 활성 Wiki 관심사 UUID.
  * @param topic          topics 가 없으면 실제 검색어(1~500자), 있으면 카드 제목용 문구.
  * @param topics         한 리포트가 함께 다룰 주제 목록(최대 5개). 순서가 곧 리포트 섹션 순서다.
  *                       비어 있으면 직렬화에서 생략돼 기존 단일 주제 동작 그대로다.
@@ -37,6 +40,8 @@ import java.util.List;
 @JsonInclude(JsonInclude.Include.NON_EMPTY)   // language/scheduled_at/report_type/topics 빈 값은 직렬화 생략
 public record GenerationRequest(
         @JsonProperty("idempotency_key") String idempotencyKey,
+        @JsonProperty("generation_scope") String generationScope,
+        @JsonProperty("interest_id") String interestId,
         @JsonProperty("topic") String topic,
         @JsonProperty("topics") List<String> topics,
         @JsonProperty("content_type") String contentType,
@@ -64,7 +69,7 @@ public record GenerationRequest(
     public static GenerationRequest singleTopic(String idempotencyKey, String searchTopic,
                                                 String contentType, String reportType,
                                                 boolean changeHistory) {
-        return new GenerationRequest(idempotencyKey, searchTopic, List.of(), contentType,
+        return new GenerationRequest(idempotencyKey, null, null, searchTopic, List.of(), contentType,
                 null, null, reportType, changeHistory ? Boolean.TRUE : null);
     }
 
@@ -84,7 +89,20 @@ public record GenerationRequest(
         }
         // 아침 브리핑에는 Delta 를 켜지 않는다. 둘 다 "기존 생성 경로를 대체"라서 어느 쪽이
         // 이기는지 계약에 정의가 없다(agent-api #12 / #20). 온디맨드에서만 선택한다.
-        return new GenerationRequest(idempotencyKey, titleTopic, List.copyOf(topics), contentType,
-                null, null, reportType, null);
+        return new GenerationRequest(idempotencyKey, null, null, titleTopic,
+                List.copyOf(topics), contentType, null, null, reportType, null);
+    }
+
+    /**
+     * 현재 활성 Wiki 관심사와 1홉 연결 노드를 묶는 관심사 리포트 요청.
+     * 주제는 Agent가 관심사 루트에서 확정하므로 {@code topic}/{@code topics}를 함께 보내지 않는다.
+     */
+    public static GenerationRequest interestBundle(String idempotencyKey, String interestId,
+                                                    String contentType, String reportType) {
+        if (interestId == null || interestId.isBlank()) {
+            throw new IllegalArgumentException("INTEREST_BUNDLE에는 현재 활성 interestId가 필요하다.");
+        }
+        return new GenerationRequest(idempotencyKey, "INTEREST_BUNDLE", interestId.strip(),
+                null, List.of(), contentType, null, null, reportType, null);
     }
 }

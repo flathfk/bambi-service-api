@@ -1,7 +1,5 @@
 package com.bambi.service.generation;
 
-import com.bambi.service.briefing.BriefingTopicService;
-import com.bambi.service.generation.dto.GenerationRequest;
 import com.bambi.service.user.UserRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -35,26 +33,16 @@ public class GenerationScheduler {
     private static final Logger log = LoggerFactory.getLogger(GenerationScheduler.class);
     private static final ZoneId KST = ZoneId.of("Asia/Seoul");
 
-    /**
-     * 카드 제목용 고정 문구 (2026-08-07 계약). {@code topics} 를 함께 보낼 때만 쓴다 —
-     * {@code topics} 가 비면 이 문구가 <b>실제 검색어로 되살아나</b> 엉뚱한 기사를 물어온다
-     * (2026-08-05 유림 확인). 그래서 아래 루프가 빈 목록을 먼저 걸러낸다.
-     */
-    static final String TITLE_TOPIC = "오늘의 관심사 브리핑";
-
-    private final GenerationSubmissionService submissionService;
+    private final MorningBriefingGenerationService morningBriefingGenerationService;
     private final UserRepository userRepository;
-    private final BriefingTopicService briefingTopicService;
     private final String contentType;
 
     public GenerationScheduler(
-            GenerationSubmissionService submissionService,
+            MorningBriefingGenerationService morningBriefingGenerationService,
             UserRepository userRepository,
-            BriefingTopicService briefingTopicService,
             @Value("${app.scheduler.generation.content-type:interest_news_card}") String contentType) {
-        this.submissionService = submissionService;
+        this.morningBriefingGenerationService = morningBriefingGenerationService;
         this.userRepository = userRepository;
-        this.briefingTopicService = briefingTopicService;
         this.contentType = contentType;
     }
 
@@ -69,27 +57,12 @@ public class GenerationScheduler {
         int skipped = 0;
         for (Long userId : userIds) {
             try {
-                // 본문 주제 = 사용자가 미리 고른 것 → 없으면 등록 관심사(폴백 3단계, agent-api #20).
-                List<String> topics = briefingTopicService.resolveForMorningBriefing(userId);
-                if (topics.isEmpty()) {
-                    // 🚨 여기서 안 걸르면 TITLE_TOPIC 고정 문구가 실제 검색어로 되살아나
-                    // 엉뚱한 기사를 물어온다(유림 확인 08-05). 보낼 주제가 없으면 안 보낸다.
+                if (morningBriefingGenerationService.submit(
+                        userId,
+                        idempotencyKey(window, userId, contentType)).isEmpty()) {
                     skipped++;
                     continue;
                 }
-                GenerationRequest request = GenerationRequest.multiTopic(
-                        idempotencyKey(window, userId, contentType),
-                        TITLE_TOPIC,   // topics 가 있으면 topic 은 검색어가 아니라 카드 제목용이다
-                        topics,
-                        contentType,
-                        GenerationPendingService.REPORT_TYPE_MORNING_BRIEFING);  // agent 가 snapshot 에 에코
-                // ⚠️ 슬롯 제목은 TITLE_TOPIC 이 아니라 topics[0] 이다. 고정 문구를 저장하면
-                // 모든 사용자의 "처리중" 슬롯이 같은 문구가 되어 무엇을 만드는 중인지 안 보인다.
-                submissionService.submit(
-                        userId,
-                        request,
-                        GenerationPendingService.REPORT_TYPE_MORNING_BRIEFING,
-                        topics.get(0));
                 requested++;
             } catch (Exception e) {
                 // agent 다운/일부 실패는 전체를 막지 않는다(컨텍스트 동기화 패턴과 동일).

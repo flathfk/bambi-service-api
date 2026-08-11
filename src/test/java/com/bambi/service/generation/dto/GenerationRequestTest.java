@@ -108,4 +108,25 @@ class GenerationRequestTest {
         // 호출부가 목록을 재사용해도 이미 만든 요청의 주제가 사라지면 안 된다.
         assertThat(request.topics()).containsExactly("폭염", "퇴근");
     }
+
+    @Test
+    void Wiki_관심사_묶음은_scope와_interest_id만_보낸다() throws Exception {
+        GenerationRequest request = GenerationRequest.interestBundle(
+                "key-1", "33333333-3333-4333-8333-333333333333",
+                "interest_news_card", "WIKI_INTEREST");
+
+        String json = mapper.writeValueAsString(request);
+
+        assertThat(json).contains("\"generation_scope\":\"INTEREST_BUNDLE\"");
+        assertThat(json).contains("\"interest_id\":\"33333333-3333-4333-8333-333333333333\"");
+        assertThat(json).doesNotContain("\"topic\"");
+        assertThat(json).doesNotContain("\"topics\"");
+    }
+
+    @Test
+    void Wiki_관심사_묶음은_빈_interest_id를_거절한다() {
+        assertThatThrownBy(() -> GenerationRequest.interestBundle(
+                "key-1", "  ", "interest_news_card", "WIKI_INTEREST"))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
 }
