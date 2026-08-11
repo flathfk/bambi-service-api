@@ -30,6 +30,9 @@ app:
   # docker-compose 가 주입하는 환경변수 (없으면 기본값)
   version: ${APP_VERSION:0.0.1}
   color: ${APP_COLOR:blue}
+  development:
+    # 개발 서버의 수동 리포트 생성 패널. 현재 개발 배포에서는 기본 노출하고 운영은 false로 끈다.
+    report-triggers-enabled: ${DEV_REPORT_TRIGGER_ENABLED:true}
   jwt:
     # 운영 환경에선 반드시 JWT_SECRET 주입 (HS256 → 최소 32바이트)
     secret: ${JWT_SECRET:dev-only-secret-change-me-please-0123456789abcdef}

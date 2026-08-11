@@ -33,6 +33,8 @@ public class GenerationPendingService {
     public static final String REPORT_TYPE_ON_DEMAND = "ON_DEMAND";
     /** 생성 유형 값: 회원가입 온보딩 완료 직후 생성. */
     public static final String REPORT_TYPE_ONBOARDING = "ONBOARDING";
+    /** 생성 유형 값: 활성 LLM Wiki 관심사 묶음 즉시 생성. */
+    public static final String REPORT_TYPE_WIKI_INTEREST = "WIKI_INTEREST";
 
     private static final Logger log = LoggerFactory.getLogger(GenerationPendingService.class);
     private static final Duration ACTIVE_VISIBLE_WINDOW = Duration.ofHours(6);
