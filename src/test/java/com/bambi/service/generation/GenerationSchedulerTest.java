@@ -38,9 +38,12 @@ class GenerationSchedulerTest {
     private final GenerationPendingService pendingService = new GenerationPendingService(pendingRepository);
     private final GenerationSubmissionService submissionService =
             new GenerationSubmissionService(client, pendingService);
+    private final MorningBriefingGenerationService morningBriefingGenerationService =
+            new MorningBriefingGenerationService(
+                    submissionService, briefingTopicService, "interest_news_card");
     private final GenerationScheduler scheduler =
-            new GenerationScheduler(submissionService, userRepository, briefingTopicService,
-                    "interest_news_card");
+            new GenerationScheduler(
+                    morningBriefingGenerationService, userRepository, "interest_news_card");
 
     @Test
     void 멱등키는_날짜윈도우_userId_contentType_규약이다() {
@@ -65,7 +68,7 @@ class GenerationSchedulerTest {
         assertThat(captor.getAllValues())
                 .allMatch(r -> "interest_news_card".equals(r.contentType()))
                 // topics 가 있으면 topic 은 검색어가 아니라 카드 제목용이다
-                .allMatch(r -> GenerationScheduler.TITLE_TOPIC.equals(r.topic()))
+                .allMatch(r -> MorningBriefingGenerationService.TITLE_TOPIC.equals(r.topic()))
                 .allMatch(r -> List.of("폭염", "퇴근", "웹툰·애니").equals(r.topics()))
                 .anyMatch(r -> r.idempotencyKey().endsWith("-1-interest_news_card"));
     }
