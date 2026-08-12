@@ -190,7 +190,7 @@ class AgentWikiClientTest {
     @DisplayName("아침 주제 선정: snake_case 응답을 읽고 limit 을 질의로 붙인다")
     void getBriefingTopicsMapsSnakeCaseAndPassesLimit() {
         String agentBody = """
-                {"user_id":"7","topics":["코스닥","폭염","웹툰"],
+                {"user_id":"7","preparation_status":"READY","topics":["코스닥","폭염","웹툰"],
                  "reason":"최근 저장한 글이 시장·날씨에 몰려 있다","candidate_count":19}
                 """;
         server.expect(requestTo("http://agent.local/internal/v1/users/7/briefing-topics?limit=3"))
@@ -202,6 +202,7 @@ class AgentWikiClientTest {
         assertThat(selection.normalizedTopics()).containsExactly("코스닥", "폭염", "웹툰");
         assertThat(selection.candidateCount()).isEqualTo(19);
         assertThat(selection.reasonOrEmpty()).isEqualTo("최근 저장한 글이 시장·날씨에 몰려 있다");
+        assertThat(selection.isPrepared()).isTrue();
     }
 
     @Test
@@ -211,7 +212,8 @@ class AgentWikiClientTest {
                         + "?briefing_date=2026-08-12&limit=3"))
                 .andExpect(method(HttpMethod.GET))
                 .andRespond(withSuccess(
-                        "{\"user_id\":\"7\",\"topics\":[\"반도체\"],"
+                        "{\"user_id\":\"7\",\"preparation_status\":\"READY\","
+                                + "\"topics\":[\"반도체\"],"
                                 + "\"reason\":\"준비됨\",\"candidate_count\":4}",
                         MediaType.APPLICATION_JSON));
 
@@ -219,6 +221,7 @@ class AgentWikiClientTest {
                 7L, LocalDate.of(2026, 8, 12), 3);
 
         assertThat(selection.normalizedTopics()).containsExactly("반도체");
+        assertThat(selection.isPrepared()).isTrue();
     }
 
     @Test
@@ -241,14 +244,15 @@ class AgentWikiClientTest {
     }
 
     @Test
-    @DisplayName("아침 주제 선정: 위키 없는 사용자(404)는 오류가 아니라 빈 결과다")
-    void getBriefingTopicsReturnsEmptyOnNotFound() {
-        // 신규 사용자에게 500 을 올리면 스케줄러가 그 사용자를 실패로 처리한다.
-        // 폴백(등록 관심사)으로 넘어가야 하므로 빈 결과로 정규화한다 — getTags 와 같은 정책.
+    @DisplayName("아침 주제 선정: 404는 빈 완료가 아니라 미준비 상태다")
+    void getBriefingTopicsReturnsNotPreparedOnNotFound() {
         server.expect(requestTo("http://agent.local/internal/v1/users/7/briefing-topics?limit=3"))
                 .andRespond(withStatus(HttpStatus.NOT_FOUND));
 
-        assertThat(client.getBriefingTopics(7L, 3).normalizedTopics()).isEmpty();
+        BriefingTopicsSelection selection = client.getBriefingTopics(7L, 3);
+
+        assertThat(selection.normalizedTopics()).isEmpty();
+        assertThat(selection.isPrepared()).isFalse();
     }
 
     @Test

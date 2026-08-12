@@ -1,6 +1,8 @@
 package com.bambi.service.generation;
 
 import com.bambi.service.briefing.BriefingTopicService;
+import com.bambi.service.briefing.BriefingPreparationPendingException;
+import com.bambi.service.briefing.MorningBriefingTopics;
 import com.bambi.service.generation.dto.GenerationRequest;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -9,6 +11,7 @@ import java.time.LocalDate;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
@@ -33,7 +36,7 @@ class MorningBriefingGenerationServiceTest {
     void 조회한_Snapshot_날짜를_생성_요청에도_그대로_보낸다() {
         LocalDate date = LocalDate.of(2026, 8, 12);
         when(briefingTopicService.resolveForMorningBriefing(7L, date))
-                .thenReturn(List.of("반도체", "프로야구"));
+                .thenReturn(MorningBriefingTopics.ready(List.of("반도체", "프로야구")));
         when(submissionService.submit(eq(7L), any(), any(), any()))
                 .thenReturn(new GenerationSubmissionService.Submission("pending-7", "job-7"));
 
@@ -51,9 +54,22 @@ class MorningBriefingGenerationServiceTest {
     @Test
     void 지정일에_주제가_없으면_Agent_생성을_접수하지_않는다() {
         LocalDate date = LocalDate.of(2026, 8, 12);
-        when(briefingTopicService.resolveForMorningBriefing(7L, date)).thenReturn(List.of());
+        when(briefingTopicService.resolveForMorningBriefing(7L, date))
+                .thenReturn(MorningBriefingTopics.ready(List.of()));
 
         assertThat(service.submit(7L, "morning-7", date)).isEmpty();
+
+        verify(submissionService, never()).submit(any(Long.class), any(), any(), any());
+    }
+
+    @Test
+    void 지정일_Snapshot이_미준비면_정기_생성이_재시도할_예외를_올린다() {
+        LocalDate date = LocalDate.of(2026, 8, 12);
+        when(briefingTopicService.resolveForMorningBriefing(7L, date))
+                .thenReturn(MorningBriefingTopics.notPrepared());
+
+        assertThatThrownBy(() -> service.submit(7L, "morning-7", date))
+                .isInstanceOf(BriefingPreparationPendingException.class);
 
         verify(submissionService, never()).submit(any(Long.class), any(), any(), any());
     }
@@ -65,7 +81,7 @@ class MorningBriefingGenerationServiceTest {
         LocalDate date = LocalDate.of(2026, 8, 12);
         when(changeHistorySettings.isEnabled(7L)).thenReturn(true);
         when(briefingTopicService.resolveForMorningBriefing(7L, date))
-                .thenReturn(List.of("반도체", "프로야구"));
+                .thenReturn(MorningBriefingTopics.ready(List.of("반도체", "프로야구")));
         when(submissionService.submit(eq(7L), any(), any(), any()))
                 .thenReturn(new GenerationSubmissionService.Submission("pending-7", "job-7"));
 
@@ -84,7 +100,7 @@ class MorningBriefingGenerationServiceTest {
         LocalDate date = LocalDate.of(2026, 8, 12);
         when(changeHistorySettings.isEnabled(7L)).thenReturn(false);
         when(briefingTopicService.resolveForMorningBriefing(7L, date))
-                .thenReturn(List.of("반도체"));
+                .thenReturn(MorningBriefingTopics.ready(List.of("반도체")));
         when(submissionService.submit(eq(7L), any(), any(), any()))
                 .thenReturn(new GenerationSubmissionService.Submission("pending-7", "job-7"));
 
@@ -99,7 +115,8 @@ class MorningBriefingGenerationServiceTest {
     void 설정을_바꾸면_같은_날이어도_멱등키가_갈린다() {
         // 키가 같으면 agent 가 먼저 접수한 Job 을 돌려줘 "켰는데 안 바뀐다"가 된다.
         LocalDate date = LocalDate.of(2026, 8, 12);
-        when(briefingTopicService.resolveForMorningBriefing(7L, date)).thenReturn(List.of("반도체"));
+        when(briefingTopicService.resolveForMorningBriefing(7L, date))
+                .thenReturn(MorningBriefingTopics.ready(List.of("반도체")));
         when(submissionService.submit(eq(7L), any(), any(), any()))
                 .thenReturn(new GenerationSubmissionService.Submission("pending-7", "job-7"));
         when(changeHistorySettings.isEnabled(7L)).thenReturn(false, true);

@@ -1,6 +1,7 @@
 package com.bambi.service.worker;
 
 import com.bambi.service.agent.dto.AgentAcceptedJob;
+import com.bambi.service.briefing.BriefingPreparationPendingException;
 import com.bambi.service.generation.GenerationSubmissionService;
 import com.bambi.service.generation.MorningBriefingGenerationService;
 import com.bambi.service.generation.schedule.GenerationScheduleOutboxEvent;
@@ -95,6 +96,23 @@ class GenerationScheduleOutboxWorkerTest {
         worker.poll();
 
         verify(outbox).markDelivered(eq(3L), anyString(), eq(null));
+    }
+
+    @Test
+    void 생성_Snapshot이_미준비면_등록_관심사로_대체하지_않고_재시도한다() {
+        GenerationScheduleOutboxEvent event = event(
+                5L, 12L, GenerationSchedulePhase.MORNING_GENERATION);
+        BriefingPreparationPendingException pending =
+                new BriefingPreparationPendingException(12L);
+        when(outbox.claim(eq(20), anyString(), eq(120))).thenReturn(List.of(event));
+        when(morningService.submit(anyLong(), anyString(), any(LocalDate.class)))
+                .thenThrow(pending);
+        when(outbox.markRetry(eq(5L), anyString(), eq(pending), eq(8), eq(5), eq(300)))
+                .thenReturn(true);
+
+        worker.poll();
+
+        verify(outbox).markRetry(eq(5L), anyString(), eq(pending), eq(8), eq(5), eq(300));
     }
 
     @Test

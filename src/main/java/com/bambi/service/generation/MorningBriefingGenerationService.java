@@ -1,6 +1,8 @@
 package com.bambi.service.generation;
 
 import com.bambi.service.briefing.BriefingTopicService;
+import com.bambi.service.briefing.BriefingPreparationPendingException;
+import com.bambi.service.briefing.MorningBriefingTopics;
 import com.bambi.service.generation.dto.GenerationRequest;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
@@ -14,7 +16,7 @@ import java.util.Optional;
  * 사용자 한 명의 아침 브리핑 주제를 확정하고 공통 생성 접수 경로로 제출한다.
  *
  * <p>정기 스케줄러와 개발용 즉시 생성 API가 이 서비스를 함께 사용한다. 호출 경로가 달라도
- * Wiki 문맥 선정·등록 관심사 폴백·다중 주제 요청 조립 규칙이 달라지지 않게 하는 경계다.
+ * Wiki 문맥 선정·준비 상태·다중 주제 요청 조립 규칙이 달라지지 않게 하는 경계다.
  */
 @Service
 public class MorningBriefingGenerationService {
@@ -54,7 +56,12 @@ public class MorningBriefingGenerationService {
             long userId,
             String idempotencyKey,
             LocalDate briefingDate) {
-        List<String> topics = briefingTopicService.resolveForMorningBriefing(userId, briefingDate);
+        MorningBriefingTopics resolved =
+                briefingTopicService.resolveForMorningBriefing(userId, briefingDate);
+        if (!resolved.prepared()) {
+            throw new BriefingPreparationPendingException(userId);
+        }
+        List<String> topics = resolved.topics();
         if (topics.isEmpty()) {
             return Optional.empty();
         }
