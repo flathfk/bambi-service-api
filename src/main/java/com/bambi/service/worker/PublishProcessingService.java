@@ -37,6 +37,15 @@ public class PublishProcessingService {
     /** V1 CHECK 제약(PRIVATE/PUBLIC)의 비공개 값. 새 값을 만들지 않고 기존 계약을 그대로 쓴다. */
     private static final String VISIBILITY_PRIVATE = "PRIVATE";
 
+    /**
+     * 공개 발행에 요구하는 최소 출처 수. 이 미만이면 사용자 설정과 무관하게 비공개로 둔다.
+     *
+     * <p>2로 정한 근거는 운영 데이터다 — 공개 카드의 출처 수 분포에서 <b>1개짜리 7장에만</b>
+     * 무의미한 입력으로 만들어진 카드가 들어 있었고 <b>2개 이상 65장에는 없었다</b>. 임의의
+     * 품질 점수를 새로 만드는 대신, 이미 계약에 실려 오는 {@code citations} 개수를 쓴다.
+     */
+    private static final int MIN_CITATIONS_FOR_PUBLIC = 2;
+
     private final CardRepository cardRepository;
     private final ReportRepository reportRepository;
     private final NotificationService notificationService;
@@ -130,7 +139,7 @@ public class PublishProcessingService {
         User user = userRepository.findById(userId).orElse(null);
         if (user != null) {
             // 저장 직전에 한 번 결정한다 — 이 값이 그대로 저장되고 이후 경로가 다시 만지지 않는다.
-            card.changeVisibility(initialVisibility(card, user));
+            card.changeVisibility(initialVisibility(card, user, item));
         }   // user 조회 실패(비정상) 시엔 종전 기본값 PRIVATE 유지.
 
         try {
@@ -172,12 +181,30 @@ public class PublishProcessingService {
      * {@code card.applyReportType(...)} 을 호출하므로 이 시점에 값이 들어와 있고, 같은 필드를
      * {@code CardService.changeVisibility} 가드도 읽으므로 두 판정이 어긋나지 않는다.
      * 유형 미상(null·ON_DEMAND 등)은 종전대로 사용자 설정을 따른다.
+     *
+     * <p><b>출처가 부족한 카드도 공개하지 않는다(2026-08-13).</b> 근거를 못 찾으면 생성을 중단하는
+     * 가드는 agent 에 이미 있지만 문턱이 0이라, 무의미한 입력이라도 아무 문서 1건에 걸리면 리포트가
+     * 나온다. 실제로 {@code asdgw}·{@code dqf} 같은 문자열로 만들어진 카드가 공개 피드에 올라왔다.
+     * 운영 데이터가 문턱을 알려준다 — <b>공개 카드 72장 중 출처 1개짜리 7장에 무의미한 것이 전부
+     * 몰려 있고, 출처 2개 이상 65장에는 하나도 없다</b>(2026-08-13 실측).
+     *
+     * <p>차단이 아니라 <b>비공개</b>인 이유는, 그날 기사가 하나뿐이었을 뿐인 멀쩡한 주제도 같이
+     * 걸리기 때문이다. 본인은 그대로 볼 수 있고 남에게만 안 보인다.
      */
-    private String initialVisibility(Card card, User user) {
+    private String initialVisibility(Card card, User user, PublishItem item) {
         if (GenerationPendingService.REPORT_TYPE_MORNING_BRIEFING.equals(card.getReportType())) {
             return VISIBILITY_PRIVATE;
         }
+        if (citationCount(item) < MIN_CITATIONS_FOR_PUBLIC) {
+            log.info("[PublishWorker] 출처 부족 → 비공개 발행 contentId={} 출처={}",
+                    item.contentId(), citationCount(item));
+            return VISIBILITY_PRIVATE;
+        }
         return user.getDefaultCardVisibility();
+    }
+
+    private static int citationCount(PublishItem item) {
+        return item.citations() == null ? 0 : item.citations().size();
     }
 
     /** 리포트(본문) upsert. 없으면 생성(저장→id 확보), 있으면 본문·인용 교체 후 반환. */

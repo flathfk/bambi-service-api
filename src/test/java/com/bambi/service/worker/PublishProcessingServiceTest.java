@@ -54,6 +54,25 @@ class PublishProcessingServiceTest {
                 .build();
     }
 
+    /**
+     * 공개 발행이 가능한 수준의 리포트 — 출처 2건.
+     *
+     * <p>{@link #item(String, int, String, String)} 은 출처가 1건이라 공개 문턱
+     * ({@code MIN_CITATIONS_FOR_PUBLIC}) 에 미달한다. 사용자 기본 공개범위가 실제로 적용되는지
+     * 보려면 문턱을 넘긴 항목이 필요하다.
+     */
+    private static PublishItem publishableItem(String contentId) {
+        return PublishItemFixture.item(contentId, 1)
+                .title("제목")
+                .summary("요약")
+                .citations(
+                        new PublishItem.Citation("src1", "https://example.com/1"),
+                        new PublishItem.Citation("src2", "https://example.com/2"))
+                .tags("코스피")
+                .noContentTags()
+                .build();
+    }
+
     /** 설정 적용 테스트용 사용자 목 — 기본 공개범위 + 알림 수신 여부. */
     private static User userWith(String defaultVisibility, boolean reportReadyNotification) {
         User user = mock(User.class);
@@ -330,11 +349,62 @@ class PublishProcessingServiceTest {
         User user = userWith("PUBLIC", true);   // 중첩 스터빙(UnfinishedStubbing) 회피 — 먼저 만든다
         when(userRepository.findById(1L)).thenReturn(Optional.of(user));
 
-        service.upsert(item("c1", 1, "제목", "요약"));
+        service.upsert(publishableItem("c1"));   // 출처 2건 — 공개 문턱을 넘긴 항목
 
         ArgumentCaptor<Card> cardCaptor = ArgumentCaptor.forClass(Card.class);
         verify(cardRepository).save(cardCaptor.capture());
         assertThat(cardCaptor.getValue().getVisibility()).isEqualTo("PUBLIC");   // 하드코딩 PRIVATE 이 아니라 설정값
+        verify(notificationService).notifyReportReady(
+                any(), any(), any(), any(), any(), any(), any(), any());
+    }
+
+    // ── 출처 부족 카드 비공개 (2026-08-13) ──────────────────────
+    // 무의미한 입력(asdgw·dqf 등)도 아무 문서 1건에 걸리면 리포트가 나와 공개 피드에 올라왔다.
+    // 실측상 무의미한 카드는 전부 출처 1개였고 2개 이상에는 하나도 없었다.
+
+    @Test
+    void 출처가_1건뿐이면_기본설정이_PUBLIC_이어도_비공개로_발행한다() {
+        when(cardRepository.findByUserIdAndExternalContentId(1L, "c1")).thenReturn(Optional.empty());
+        when(reportRepository.findByUserIdAndExternalContentId(1L, "c1")).thenReturn(Optional.empty());
+        when(reportRepository.save(any(Report.class))).thenAnswer(inv -> inv.getArgument(0));
+        User user = userWith("PUBLIC", true);
+        when(userRepository.findById(1L)).thenReturn(Optional.of(user));
+
+        service.upsert(item("c1", 1, "제목", "요약"));   // 출처 1건
+
+        ArgumentCaptor<Card> cardCaptor = ArgumentCaptor.forClass(Card.class);
+        verify(cardRepository).save(cardCaptor.capture());
+        assertThat(cardCaptor.getValue().getVisibility()).isEqualTo("PRIVATE");
+    }
+
+    @Test
+    void 출처가_아예_없으면_기본설정이_PUBLIC_이어도_비공개로_발행한다() {
+        when(cardRepository.findByUserIdAndExternalContentId(1L, "c1")).thenReturn(Optional.empty());
+        when(reportRepository.findByUserIdAndExternalContentId(1L, "c1")).thenReturn(Optional.empty());
+        when(reportRepository.save(any(Report.class))).thenAnswer(inv -> inv.getArgument(0));
+        User user = userWith("PUBLIC", true);
+        when(userRepository.findById(1L)).thenReturn(Optional.of(user));
+
+        service.upsert(PublishItemFixture.item("c1", 1)   // 기본값 = 출처 0건
+                .title("제목").summary("요약").tags("코스피").noContentTags().build());
+
+        ArgumentCaptor<Card> cardCaptor = ArgumentCaptor.forClass(Card.class);
+        verify(cardRepository).save(cardCaptor.capture());
+        assertThat(cardCaptor.getValue().getVisibility()).isEqualTo("PRIVATE");
+    }
+
+    /** 비공개로 낮추는 것은 공개범위뿐이다 — 카드·리포트·알림은 그대로 만들어져 본인은 볼 수 있다. */
+    @Test
+    void 출처가_부족해도_카드와_알림은_정상_생성한다() {
+        when(cardRepository.findByUserIdAndExternalContentId(1L, "c1")).thenReturn(Optional.empty());
+        when(reportRepository.findByUserIdAndExternalContentId(1L, "c1")).thenReturn(Optional.empty());
+        when(reportRepository.save(any(Report.class))).thenAnswer(inv -> inv.getArgument(0));
+        User user = userWith("PUBLIC", true);
+        when(userRepository.findById(1L)).thenReturn(Optional.of(user));
+
+        service.upsert(item("c1", 1, "제목", "요약"));
+
+        verify(cardRepository).save(any(Card.class));
         verify(notificationService).notifyReportReady(
                 any(), any(), any(), any(), any(), any(), any(), any());
     }
@@ -403,7 +473,12 @@ class PublishProcessingServiceTest {
         User user = userWith("PUBLIC", true);
         when(userRepository.findById(1L)).thenReturn(Optional.of(user));
 
-        service.upsert(PublishItemFixture.item().reportType("ON_DEMAND").build());
+        // 출처 2건 — 공개 문턱을 넘겨야 사용자 설정 적용 여부를 볼 수 있다(fixture 기본값은 0건).
+        service.upsert(PublishItemFixture.item().reportType("ON_DEMAND")
+                .citations(
+                        new PublishItem.Citation("src1", "https://example.com/1"),
+                        new PublishItem.Citation("src2", "https://example.com/2"))
+                .build());
 
         ArgumentCaptor<Card> cardCaptor = ArgumentCaptor.forClass(Card.class);
         verify(cardRepository).save(cardCaptor.capture());
