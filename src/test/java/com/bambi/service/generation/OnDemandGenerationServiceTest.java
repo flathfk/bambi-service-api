@@ -70,10 +70,7 @@ class OnDemandGenerationServiceTest {
         verify(generationClient).requestGeneration(eq(28L), captor.capture());
         // 고정 문구가 아니라 대표 관심사가 실제 검색 주제로 들어가야 한다(엉뚱한 기사 방지 — 우석/유림 08-05).
         assertThat(captor.getValue().topic()).isEqualTo("SK하이닉스");
-        assertThat(captor.getValue().navigationProfile())
-                .isEqualTo(GenerationRequest.ON_DEMAND_NAVIGATION_PROFILE);
-        assertThat(captor.getValue().idempotencyKey())
-                .startsWith("ondemand-28-interest_news_card-SK하이닉스-ON_DEMAND_2HOP-");
+        assertThat(captor.getValue().idempotencyKey()).startsWith("ondemand-28-interest_news_card-");
         // id 는 항상 보장되고 멱등키에서 결정적으로 파생된다(같은 분 연타 = 같은 id → 펜딩 중복 방지).
         String expectedId = java.util.UUID.nameUUIDFromBytes(
                 captor.getValue().idempotencyKey().getBytes(java.nio.charset.StandardCharsets.UTF_8)).toString();
@@ -312,7 +309,7 @@ class OnDemandGenerationServiceTest {
         List<GenerationRequest> sent = captor.getAllValues();
         // 분 경계를 넘는 순간을 테스트가 우연히 밟으면 키 끝의 분만 달라진다. 그래서
         // 완전 일치 대신 "분 앞까지 같은 접두사"로 본다 — 검증 대상은 주제가 키에 들어갔는지다.
-        String prefix = "ondemand-28-interest_news_card-커리어·이직-ON_DEMAND_2HOP-";
+        String prefix = "ondemand-28-interest_news_card-커리어·이직-";
         assertThat(sent.get(0).idempotencyKey()).startsWith(prefix);
         assertThat(sent.get(1).idempotencyKey()).startsWith(prefix);
     }

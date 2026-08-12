@@ -84,7 +84,7 @@ public class OnDemandGenerationService {
         // report_type 을 요청에 실어 agent 가 발행 snapshot 에 에코하게 한다(2026-08-06 계약).
         // 온디맨드는 아직 단일 주제다 — topic 이 실제 검색어다(고정 문구를 넣으면 안 된다).
         // 상위 3개 자동 선정 + 연결 분석 전환은 agent 통합 서술이 나온 뒤 별도 작업.
-        GenerationRequest request = GenerationRequest.onDemandTopic(
+        GenerationRequest request = GenerationRequest.singleTopic(
                 onDemandKey(userId, topic, changeHistory), topic, contentType,
                 GenerationPendingService.REPORT_TYPE_ON_DEMAND, changeHistory);
         // agent 202 body 파싱 실패 시 null 일 수 있어 키로 쓰지 않는다 — 참고용으로만 내린다.
@@ -135,8 +135,7 @@ public class OnDemandGenerationService {
      * (실측: 홈 rail 에서 10회 눌렀는데 분이 바뀔 때마다 1건씩, 총 4건만 접수됨).
      * 원래 의도인 "같은 버튼 연타 방지"는 주제가 같으면 키가 같으므로 그대로 유지된다.
      *
-     * <p>탐색 프로필도 키에 섞어 배포 전 1-hop Job이 배포 후 2-hop 요청에 재사용되지 않게 한다.
-     * Delta 여부도 같은 이유로 섞는다. 안 섞으면 같은 분 안에서 토글해도 멱등키가 같아
+     * <p>Delta 여부도 같은 이유로 섞는다. 안 섞으면 같은 분 안에서 토글해도 멱등키가 같아
      * 사용자는 "켰는데 안 바뀐다"를 겪는다.
      * 꺼진 경우에는 접미사를 붙이지 않아 <b>기존 키 형식이 그대로 유지</b>된다(회귀 없음).
      *
@@ -145,8 +144,7 @@ public class OnDemandGenerationService {
      */
     private String onDemandKey(long userId, String topic, boolean changeHistory) {
         long minute = OffsetDateTime.now(KST).truncatedTo(ChronoUnit.MINUTES).toEpochSecond();
-        String base = "ondemand-" + userId + "-" + contentType + "-" + topic + "-"
-                + GenerationRequest.ON_DEMAND_NAVIGATION_PROFILE + "-" + minute;
+        String base = "ondemand-" + userId + "-" + contentType + "-" + topic + "-" + minute;
         return changeHistory ? base + "-delta" : base;
     }
 }

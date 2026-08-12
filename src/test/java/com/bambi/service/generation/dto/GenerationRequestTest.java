@@ -29,18 +29,6 @@ class GenerationRequestTest {
         // 빈 배열을 보내면 agent 가 "여러 주제" 경로로 오해할 여지가 없도록 아예 뺀다(회귀 없음).
         assertThat(json).doesNotContain("topics");
         assertThat(json).contains("\"topic\":\"폭염\"");
-        assertThat(json).doesNotContain("navigation_profile");
-    }
-
-    @Test
-    void 온디맨드_주제는_2홉_탐색_프로필을_보낸다() throws Exception {
-        GenerationRequest request = GenerationRequest.onDemandTopic(
-                "key-1", "폭염", "interest_news_card", "ON_DEMAND", false);
-
-        assertThat(request.navigationProfile())
-                .isEqualTo(GenerationRequest.ON_DEMAND_NAVIGATION_PROFILE);
-        assertThat(mapper.writeValueAsString(request))
-                .contains("\"navigation_profile\":\"ON_DEMAND_2HOP\"");
     }
 
     // ---------- 변경점(Delta) 추적 — agent-api #12 김기용 ----------
@@ -106,7 +94,6 @@ class GenerationRequestTest {
 
         assertThat(mapper.writeValueAsString(request))
                 .contains("\"briefing_date\":\"2026-08-12\"");
-        assertThat(request.navigationProfile()).isNull();
     }
 
     @Test
@@ -130,7 +117,6 @@ class GenerationRequestTest {
         assertThat(json).contains("\"briefing_date\":\"2026-08-12\"");
         assertThat(json).doesNotContain("\"interest_id\"");
         assertThat(json).doesNotContain("\"topics\"");
-        assertThat(json).doesNotContain("navigation_profile");
     }
 
     @Test
