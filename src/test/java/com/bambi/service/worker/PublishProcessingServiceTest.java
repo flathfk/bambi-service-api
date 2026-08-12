@@ -1,6 +1,7 @@
 package com.bambi.service.worker;
 
 import com.bambi.service.agent.publish.dto.PublishItem;
+import com.bambi.service.agent.publish.dto.PublishItemFixture;
 import com.bambi.service.card.Card;
 import com.bambi.service.card.CardRepository;
 import com.bambi.service.generation.GenerationPendingService;
@@ -44,24 +45,13 @@ class PublishProcessingServiceTest {
 
     private static PublishItem item(String contentId, int version, String title, String summary) {
         // content_tags·report_type 미도착(단계적 롤아웃 전) → tags(topic) 폴백 + reportType null 경로
-        return new PublishItem(contentId, "1", version, "hash-" + version, title, summary, "본문-" + version,
-                List.of(new PublishItem.Citation("src", "https://example.com")),
-                List.of("코스피"), null, null, null, null, null, null, null);
-    }
-
-    /** 정기 아침 브리핑 스냅샷 — report_type 과 스케줄 멱등키({날짜}-{userId}-{contentType})가 실린다. */
-    private static PublishItem morningBriefing(String contentId, int version) {
-        return reportOfType(contentId, version, "MORNING_BRIEFING");
-    }
-
-    /** 지정한 생성 유형의 스냅샷. 아침 브리핑만 스케줄 멱등키를 붙인다(공개 시각 계산 경로 동일 유지). */
-    private static PublishItem reportOfType(String contentId, int version, String reportType) {
-        boolean morning = "MORNING_BRIEFING".equals(reportType);
-        return new PublishItem(contentId, "1", version, "hash-" + version,
-                "제목", "요약", "본문-" + version,
-                List.of(), List.of(), List.of("반도체"), reportType,
-                morning ? "2026-08-12-1-interest_news_card" : null,
-                null, null, null, null);
+        return PublishItemFixture.item(contentId, version)
+                .title(title)
+                .summary(summary)
+                .citations(new PublishItem.Citation("src", "https://example.com"))
+                .tags("코스피")
+                .noContentTags()
+                .build();
     }
 
     /** 설정 적용 테스트용 사용자 목 — 기본 공개범위 + 알림 수신 여부. */
@@ -107,14 +97,13 @@ class PublishProcessingServiceTest {
         when(cardRepository.findByUserIdAndExternalContentId(1L, "c1")).thenReturn(Optional.empty());
         when(reportRepository.findByUserIdAndExternalContentId(1L, "c1")).thenReturn(Optional.empty());
         when(reportRepository.save(any(Report.class))).thenAnswer(inv -> inv.getArgument(0));
-        PublishItem item = new PublishItem(
-                "c1", "1", 1, "hash-1", "제목", "요약", "본문",
-                List.of(), List.of(), List.of(), null, null, null, null, null, null,
-                new PublishItem.CoverImage(
+        PublishItem item = PublishItemFixture.item()
+                .coverImage(new PublishItem.CoverImage(
                         "https://cdn.example.com/cover.jpg",
                         "https://news.example.com/article",
                         "기사 제목",
-                        "G1"));
+                        "G1"))
+                .build();
 
         service.upsert(item);
 
@@ -133,9 +122,10 @@ class PublishProcessingServiceTest {
         when(reportRepository.findByUserIdAndExternalContentId(1L, "c1")).thenReturn(Optional.empty());
         when(reportRepository.save(any(Report.class))).thenAnswer(inv -> inv.getArgument(0));
         // 델타 4단 폼으로 만들어진 카드 — 프론트가 이 값으로만 렌더링 규칙을 고른다(김기용 계약 08-11)
-        PublishItem item = new PublishItem(
-                "c1", "1", 1, "hash-1", "제목", "요약", "## 이번에 달라진 점\n\n- 새 사실 [G1]",
-                List.of(), List.of(), List.of(), null, null, null, null, null, null, null, true);
+        PublishItem item = PublishItemFixture.item()
+                .body("## 이번에 달라진 점\n\n- 새 사실 [G1]")
+                .changeHistoryEnabled(true)
+                .build();
 
         service.upsert(item);
 
@@ -179,8 +169,10 @@ class PublishProcessingServiceTest {
         when(cardRepository.findByUserIdAndExternalContentId(1L, "c1")).thenReturn(Optional.empty());
         when(reportRepository.findByUserIdAndExternalContentId(1L, "c1")).thenReturn(Optional.empty());
         when(reportRepository.save(any(Report.class))).thenAnswer(inv -> inv.getArgument(0));
-        PublishItem item = new PublishItem("c1", "1", 1, "hash-1", "제목", "요약", "본문",
-                List.of(), List.of(), List.of("반도체"), "ON_DEMAND", null, null, null, null, null);
+        PublishItem item = PublishItemFixture.item()
+                .contentTags("반도체")
+                .reportType("ON_DEMAND")
+                .build();
 
         service.upsert(item);
 
@@ -208,10 +200,12 @@ class PublishProcessingServiceTest {
         when(reportRepository.findByUserIdAndExternalContentId(1L, "c1"))
                 .thenReturn(Optional.empty());
         when(reportRepository.save(any(Report.class))).thenAnswer(inv -> inv.getArgument(0));
-        PublishItem item = new PublishItem(
-                "c1", "1", 1, "hash-1", "아침 브리핑", "요약", "본문",
-                List.of(), List.of(), List.of("반도체"), "MORNING_BRIEFING",
-                "2026-08-12-1-interest_news_card", null, null, null, null);
+        PublishItem item = PublishItemFixture.item()
+                .title("아침 브리핑")
+                .contentTags("반도체")
+                .reportType("MORNING_BRIEFING")
+                .requestIdempotencyKey("2026-08-12-1-interest_news_card")
+                .build();
 
         service.upsert(item);
 
@@ -245,8 +239,10 @@ class PublishProcessingServiceTest {
         when(reportRepository.findByUserIdAndExternalContentId(1L, "c1")).thenReturn(Optional.empty());
         when(reportRepository.save(any(Report.class))).thenAnswer(inv -> inv.getArgument(0));
         // tags=topic 에코, content_tags=리포트 내용 기반 실제 태그
-        PublishItem item = new PublishItem("c1", "1", 1, "hash-1", "제목", "요약", "본문",
-                List.of(), List.of("오늘의 관심사 뉴스"), List.of("군사 AI", "AI 규제"), null, null, null, null, null, null);
+        PublishItem item = PublishItemFixture.item()
+                .tags("오늘의 관심사 뉴스")
+                .contentTags("군사 AI", "AI 규제")
+                .build();
 
         service.upsert(item);
 
@@ -290,9 +286,10 @@ class PublishProcessingServiceTest {
         when(reportRepository.findByUserIdAndExternalContentId(1L, "c1")).thenReturn(Optional.empty());
         when(reportRepository.save(any(Report.class))).thenAnswer(inv -> inv.getArgument(0));
         // 추천 매칭용 taxonomy_topic_ids + version 이 실린 스냅샷
-        PublishItem item = new PublishItem("c1", "1", 1, "hash-1", "제목", "요약", "본문",
-                List.of(), List.of(), List.of("반도체"), null, null, null, null,
-                List.of("ai_ml", "industry"), "1.0.0-draft");
+        PublishItem item = PublishItemFixture.item()
+                .contentTags("반도체")
+                .taxonomy("1.0.0-draft", List.of("ai_ml", "industry"))
+                .build();
 
         service.upsert(item);
 
@@ -310,8 +307,10 @@ class PublishProcessingServiceTest {
         when(cardRepository.findByUserIdAndExternalContentId(1L, "c1")).thenReturn(Optional.empty());
         when(reportRepository.findByUserIdAndExternalContentId(1L, "c1")).thenReturn(Optional.empty());
         when(reportRepository.save(any(Report.class))).thenAnswer(inv -> inv.getArgument(0));
-        PublishItem item = new PublishItem("c1", "1", 1, "hash-1", "제목", "요약", "본문",
-                List.of(), List.of(), List.of("반도체"), null, null, null, null, List.of(), "");
+        PublishItem item = PublishItemFixture.item()
+                .contentTags("반도체")
+                .taxonomy("", List.of())
+                .build();
 
         service.upsert(item);   // 예외 없이 저장
 
@@ -367,7 +366,10 @@ class PublishProcessingServiceTest {
         User user = userWith("PUBLIC", true);   // 중첩 스터빙(UnfinishedStubbing) 회피 — 먼저 만든다
         when(userRepository.findById(1L)).thenReturn(Optional.of(user));
 
-        service.upsert(morningBriefing("c1", 1));
+        service.upsert(PublishItemFixture.item()
+                .reportType("MORNING_BRIEFING")
+                .requestIdempotencyKey("2026-08-12-1-interest_news_card")
+                .build());
 
         ArgumentCaptor<Card> cardCaptor = ArgumentCaptor.forClass(Card.class);
         verify(cardRepository).save(cardCaptor.capture());   // 실제 저장되는 카드로 검증
@@ -383,7 +385,10 @@ class PublishProcessingServiceTest {
         User user = userWith("PRIVATE", true);
         when(userRepository.findById(1L)).thenReturn(Optional.of(user));
 
-        service.upsert(morningBriefing("c1", 1));
+        service.upsert(PublishItemFixture.item()
+                .reportType("MORNING_BRIEFING")
+                .requestIdempotencyKey("2026-08-12-1-interest_news_card")
+                .build());
 
         ArgumentCaptor<Card> cardCaptor = ArgumentCaptor.forClass(Card.class);
         verify(cardRepository).save(cardCaptor.capture());
@@ -398,7 +403,7 @@ class PublishProcessingServiceTest {
         User user = userWith("PUBLIC", true);
         when(userRepository.findById(1L)).thenReturn(Optional.of(user));
 
-        service.upsert(reportOfType("c1", 1, "ON_DEMAND"));
+        service.upsert(PublishItemFixture.item().reportType("ON_DEMAND").build());
 
         ArgumentCaptor<Card> cardCaptor = ArgumentCaptor.forClass(Card.class);
         verify(cardRepository).save(cardCaptor.capture());
@@ -413,7 +418,7 @@ class PublishProcessingServiceTest {
         User user = userWith("PRIVATE", true);
         when(userRepository.findById(1L)).thenReturn(Optional.of(user));
 
-        service.upsert(reportOfType("c1", 1, "ON_DEMAND"));
+        service.upsert(PublishItemFixture.item().reportType("ON_DEMAND").build());
 
         ArgumentCaptor<Card> cardCaptor = ArgumentCaptor.forClass(Card.class);
         verify(cardRepository).save(cardCaptor.capture());
@@ -431,7 +436,10 @@ class PublishProcessingServiceTest {
         when(cardRepository.findByUserIdAndExternalContentId(1L, "c1")).thenReturn(Optional.of(existing));
         when(reportRepository.findByUserIdAndExternalContentId(1L, "c1")).thenReturn(Optional.of(existingReport));
 
-        service.upsert(morningBriefing("c1", 2));
+        service.upsert(PublishItemFixture.item("c1", 2)
+                .reportType("MORNING_BRIEFING")
+                .requestIdempotencyKey("2026-08-12-1-interest_news_card")
+                .build());
 
         assertThat(existing.getVisibility()).isEqualTo("PUBLIC");
         verify(userRepository, never()).findById(any());
@@ -485,9 +493,10 @@ class PublishProcessingServiceTest {
         Card existingCard = Card.fromExternal(1L, "c1", 1, "제목", "요약", null);
         when(cardRepository.findByUserIdAndExternalContentId(1L, "c1"))
                 .thenReturn(Optional.of(existingCard));
-        PublishItem published = new PublishItem(
-                "c1", "1", 1, "hash-1", "제목", "요약", "본문",
-                List.of(), List.of(), List.of(), "ON_DEMAND", "generation-key-1", null, null, null, null);
+        PublishItem published = PublishItemFixture.item()
+                .reportType("ON_DEMAND")
+                .requestIdempotencyKey("generation-key-1")
+                .build();
 
         service.upsert(published);
 
@@ -501,9 +510,10 @@ class PublishProcessingServiceTest {
         // 프론트가 "처리중" 슬롯을 완성 카드로 바꿔 끼우려면 어느 카드가 됐는지가 필요하다.
         when(cardRepository.findByUserIdAndExternalContentId(1L, "c1")).thenReturn(Optional.empty());
         when(reportRepository.save(any(Report.class))).thenAnswer(inv -> inv.getArgument(0));
-        PublishItem published = new PublishItem(
-                "c1", "1", 1, "hash-1", "제목", "요약", "본문",
-                List.of(), List.of(), List.of(), "ON_DEMAND", "generation-key-1", null, null, null, null);
+        PublishItem published = PublishItemFixture.item()
+                .reportType("ON_DEMAND")
+                .requestIdempotencyKey("generation-key-1")
+                .build();
 
         service.upsert(published);
 

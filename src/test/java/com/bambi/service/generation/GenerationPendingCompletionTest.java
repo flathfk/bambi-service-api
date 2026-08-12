@@ -1,6 +1,7 @@
 package com.bambi.service.generation;
 
 import com.bambi.service.agent.publish.dto.PublishItem;
+import com.bambi.service.agent.publish.dto.PublishItemFixture;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -149,8 +150,12 @@ class GenerationPendingCompletionTest {
 
     private static PublishItem item(String requestKey, String reportType, String generationTopic,
                                     OffsetDateTime createdAt) {
-        return new PublishItem("c1", "1", 1, "hash-1", "제목", "요약", "본문",
-                List.of(), List.of(), List.of(), reportType, requestKey, generationTopic, createdAt, null, null);
+        return PublishItemFixture.item()
+                .reportType(reportType)
+                .requestIdempotencyKey(requestKey)
+                .generationTopic(generationTopic)
+                .createdAt(createdAt)
+                .build();
     }
 
     private static GenerationPending pendingWithId(UUID id) {

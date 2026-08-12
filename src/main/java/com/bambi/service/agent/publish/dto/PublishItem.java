@@ -80,30 +80,6 @@ public record PublishItem(
                 generationTopic, createdAt, taxonomyTopicIds, taxonomyVersion, null, false);
     }
 
-    /** change_history_enabled 도입 전 생성자 계약을 유지한다(대표 이미지까지만 싣는 호출부). */
-    public PublishItem(
-            String contentId,
-            String userId,
-            Integer version,
-            String snapshotHash,
-            String title,
-            String summary,
-            String body,
-            List<Citation> citations,
-            List<String> tags,
-            List<String> contentTags,
-            String reportType,
-            String requestIdempotencyKey,
-            String generationTopic,
-            OffsetDateTime createdAt,
-            List<String> taxonomyTopicIds,
-            String taxonomyVersion,
-            CoverImage coverImage) {
-        this(contentId, userId, version, snapshotHash, title, summary, body,
-                citations, tags, contentTags, reportType, requestIdempotencyKey,
-                generationTopic, createdAt, taxonomyTopicIds, taxonomyVersion, coverImage, false);
-    }
-
     /**
      * 연결 키가 실려 왔는가. 2026-08-10 이전에 이미 생성돼 저장된 Snapshot 은 이 값이
      * <b>빈 문자열</b>이다(소급 안 됨, 김기용 확인). 그 구간만 근사 매칭으로 커버한다.

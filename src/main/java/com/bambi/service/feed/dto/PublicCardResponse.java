@@ -1,6 +1,8 @@
 package com.bambi.service.feed.dto;
 
 import com.bambi.service.card.Card;
+import com.bambi.service.report.Report;
+import com.bambi.service.report.dto.ReportCoverImageResponse;
 import com.bambi.service.user.User;
 
 import java.time.OffsetDateTime;
@@ -19,6 +21,16 @@ public record PublicCardResponse(
         // why_for_you 는 폐기 방향(07-27) → 관심사 태그(tags)로 대체. 당분간 둘 다 내려 프론트 전환 여유를 준다.
         String whyForYou,
         List<String> tags,
+        /*
+          카드 본문(리포트)의 대표 이미지 — 내 피드 CardResponse.coverImage 와 **같은 값·같은 모양**이다
+          (같은 report 의 cover_image_* 컬럼). 그동안 공개 피드에만 없어서 같은 카드가 내 보고서에서는
+          이미지가 있고 남의 피드에서는 없었다.
+
+          리포트가 없는(즉시) 카드, 대표 이미지를 못 고른 리포트는 null 이다 —
+          ReportCoverImageResponse.from 이 url·sourceUrl 이 모두 있을 때만 객체를 만든다.
+          서비스가 카드→리포트를 1회 IN 쿼리로 배치 로딩해 채운다(카드별 재조회 없음).
+        */
+        ReportCoverImageResponse coverImage,
         AuthorResponse author,
         long likeCount,
         boolean liked,
@@ -51,7 +63,11 @@ public record PublicCardResponse(
     public record MatchedCategory(String categoryId, String name) {
     }
 
-    public static PublicCardResponse from(Card card, User author, long likeCount,
+    /**
+     * @param report 이 카드가 참조하는 리포트(대표 이미지 출처). 리포트 없는 카드는 null —
+     *               그때 {@code coverImage} 도 null 이다. 호출부가 배치로 미리 로딩해 넘긴다.
+     */
+    public static PublicCardResponse from(Card card, Report report, User author, long likeCount,
                                           boolean liked, boolean scrapped,
                                           List<MatchedTopic> matchedTopics,
                                           List<MatchedCategory> matchedCategories) {
@@ -64,6 +80,7 @@ public record PublicCardResponse(
                 card.getSummary(),
                 card.getWhyForYou(),
                 List.copyOf(card.getInterestTags()),
+                ReportCoverImageResponse.from(report),
                 AuthorResponse.from(author),
                 likeCount,
                 liked,
