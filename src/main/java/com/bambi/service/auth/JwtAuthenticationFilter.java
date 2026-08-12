@@ -19,7 +19,7 @@ import java.io.IOException;
 import java.util.List;
 
 /**
- * Authorization: Bearer <token> 를 읽어 SecurityContext 에 인증정보를 세팅한다.
+ * {@code Authorization: Bearer <token>} 를 읽어 SecurityContext 에 인증정보를 세팅한다.
  * 토큰이 없거나 유효하지 않으면 그냥 통과(→ 보호된 엔드포인트에서 401 처리).
  */
 @Component
