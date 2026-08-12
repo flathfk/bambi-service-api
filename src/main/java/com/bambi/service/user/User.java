@@ -51,10 +51,12 @@ public class User {
     @Column(length = 300)
     private String bio;
 
-    // 사용자 설정(V17). 카드 발행 시 적용될 기본 공개범위 — 초기값은 DB DEFAULT 'PRIVATE' 와 일치시켜
+    // 사용자 설정(V17). 카드 발행 시 적용될 기본 공개범위 — 초기값은 DB DEFAULT 와 일치시켜
     // JPA insert 가 NULL/기본값으로 DEFAULT 를 덮어쓰지 않게 한다.
+    // V31(08-12)에서 'PRIVATE' → 'PUBLIC'. 공개 피드가 채워지도록 기본을 공개로 뒤집었다.
+    // 아침 브리핑은 이 값과 무관하게 항상 PRIVATE(PublishProcessingService.initialVisibility).
     @Column(name = "default_card_visibility", length = 20, nullable = false)
-    private String defaultCardVisibility = "PRIVATE";
+    private String defaultCardVisibility = "PUBLIC";
 
     // 리포트 완료(REPORT_READY) 알림 수신 여부 — 초기값 true 는 DB DEFAULT TRUE 와 일치.
     @Column(name = "report_ready_notification", nullable = false)
