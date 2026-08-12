@@ -49,6 +49,21 @@ class PublishProcessingServiceTest {
                 List.of("코스피"), null, null, null, null, null, null, null);
     }
 
+    /** 정기 아침 브리핑 스냅샷 — report_type 과 스케줄 멱등키({날짜}-{userId}-{contentType})가 실린다. */
+    private static PublishItem morningBriefing(String contentId, int version) {
+        return reportOfType(contentId, version, "MORNING_BRIEFING");
+    }
+
+    /** 지정한 생성 유형의 스냅샷. 아침 브리핑만 스케줄 멱등키를 붙인다(공개 시각 계산 경로 동일 유지). */
+    private static PublishItem reportOfType(String contentId, int version, String reportType) {
+        boolean morning = "MORNING_BRIEFING".equals(reportType);
+        return new PublishItem(contentId, "1", version, "hash-" + version,
+                "제목", "요약", "본문-" + version,
+                List.of(), List.of(), List.of("반도체"), reportType,
+                morning ? "2026-08-12-1-interest_news_card" : null,
+                null, null, null, null);
+    }
+
     /** 설정 적용 테스트용 사용자 목 — 기본 공개범위 + 알림 수신 여부. */
     private static User userWith(String defaultVisibility, boolean reportReadyNotification) {
         User user = mock(User.class);
@@ -323,6 +338,103 @@ class PublishProcessingServiceTest {
         assertThat(cardCaptor.getValue().getVisibility()).isEqualTo("PUBLIC");   // 하드코딩 PRIVATE 이 아니라 설정값
         verify(notificationService).notifyReportReady(
                 any(), any(), any(), any(), any(), any(), any(), any());
+    }
+
+    @Test
+    void 신규_발행카드는_사용자_기본공개범위를_따른다_PRIVATE() {
+        when(cardRepository.findByUserIdAndExternalContentId(1L, "c1")).thenReturn(Optional.empty());
+        when(reportRepository.findByUserIdAndExternalContentId(1L, "c1")).thenReturn(Optional.empty());
+        when(reportRepository.save(any(Report.class))).thenAnswer(inv -> inv.getArgument(0));
+        User user = userWith("PRIVATE", true);
+        when(userRepository.findById(1L)).thenReturn(Optional.of(user));
+
+        service.upsert(item("c1", 1, "제목", "요약"));
+
+        ArgumentCaptor<Card> cardCaptor = ArgumentCaptor.forClass(Card.class);
+        verify(cardRepository).save(cardCaptor.capture());
+        assertThat(cardCaptor.getValue().getVisibility()).isEqualTo("PRIVATE");
+    }
+
+    // ── 아침 브리핑 최초 생성 공개범위 차단 ──────────────────────
+    // CardService.changeVisibility 는 아침 브리핑의 PRIVATE→PUBLIC 전환을 막지만(#100),
+    // 기본 공개설정이 PUBLIC 인 사용자는 생성 시점부터 PUBLIC 이라 그 가드를 지나친다.
+
+    @Test
+    void 아침브리핑은_기본설정이_PUBLIC_이어도_PRIVATE_로_생성한다() {
+        when(cardRepository.findByUserIdAndExternalContentId(1L, "c1")).thenReturn(Optional.empty());
+        when(reportRepository.findByUserIdAndExternalContentId(1L, "c1")).thenReturn(Optional.empty());
+        when(reportRepository.save(any(Report.class))).thenAnswer(inv -> inv.getArgument(0));
+        User user = userWith("PUBLIC", true);   // 중첩 스터빙(UnfinishedStubbing) 회피 — 먼저 만든다
+        when(userRepository.findById(1L)).thenReturn(Optional.of(user));
+
+        service.upsert(morningBriefing("c1", 1));
+
+        ArgumentCaptor<Card> cardCaptor = ArgumentCaptor.forClass(Card.class);
+        verify(cardRepository).save(cardCaptor.capture());   // 실제 저장되는 카드로 검증
+        assertThat(cardCaptor.getValue().getVisibility()).isEqualTo("PRIVATE");
+        assertThat(cardCaptor.getValue().getReportType()).isEqualTo("MORNING_BRIEFING");
+    }
+
+    @Test
+    void 아침브리핑은_기본설정이_PRIVATE_이면_그대로_PRIVATE_로_생성한다() {
+        when(cardRepository.findByUserIdAndExternalContentId(1L, "c1")).thenReturn(Optional.empty());
+        when(reportRepository.findByUserIdAndExternalContentId(1L, "c1")).thenReturn(Optional.empty());
+        when(reportRepository.save(any(Report.class))).thenAnswer(inv -> inv.getArgument(0));
+        User user = userWith("PRIVATE", true);
+        when(userRepository.findById(1L)).thenReturn(Optional.of(user));
+
+        service.upsert(morningBriefing("c1", 1));
+
+        ArgumentCaptor<Card> cardCaptor = ArgumentCaptor.forClass(Card.class);
+        verify(cardRepository).save(cardCaptor.capture());
+        assertThat(cardCaptor.getValue().getVisibility()).isEqualTo("PRIVATE");
+    }
+
+    @Test
+    void 아침브리핑이_아니면_기본설정_PUBLIC_을_그대로_따른다() {
+        when(cardRepository.findByUserIdAndExternalContentId(1L, "c1")).thenReturn(Optional.empty());
+        when(reportRepository.findByUserIdAndExternalContentId(1L, "c1")).thenReturn(Optional.empty());
+        when(reportRepository.save(any(Report.class))).thenAnswer(inv -> inv.getArgument(0));
+        User user = userWith("PUBLIC", true);
+        when(userRepository.findById(1L)).thenReturn(Optional.of(user));
+
+        service.upsert(reportOfType("c1", 1, "ON_DEMAND"));
+
+        ArgumentCaptor<Card> cardCaptor = ArgumentCaptor.forClass(Card.class);
+        verify(cardRepository).save(cardCaptor.capture());
+        assertThat(cardCaptor.getValue().getVisibility()).isEqualTo("PUBLIC");   // 회귀 금지: 일반 보고서는 종전 동작
+    }
+
+    @Test
+    void 아침브리핑이_아니면_기본설정_PRIVATE_을_그대로_따른다() {
+        when(cardRepository.findByUserIdAndExternalContentId(1L, "c1")).thenReturn(Optional.empty());
+        when(reportRepository.findByUserIdAndExternalContentId(1L, "c1")).thenReturn(Optional.empty());
+        when(reportRepository.save(any(Report.class))).thenAnswer(inv -> inv.getArgument(0));
+        User user = userWith("PRIVATE", true);
+        when(userRepository.findById(1L)).thenReturn(Optional.of(user));
+
+        service.upsert(reportOfType("c1", 1, "ON_DEMAND"));
+
+        ArgumentCaptor<Card> cardCaptor = ArgumentCaptor.forClass(Card.class);
+        verify(cardRepository).save(cardCaptor.capture());
+        assertThat(cardCaptor.getValue().getVisibility()).isEqualTo("PRIVATE");
+    }
+
+    @Test
+    void 아침브리핑_재발행은_사용자가_바꿔둔_공개범위를_되돌리지_않는다() {
+        // 갱신 경로는 종전대로 공개범위를 건드리지 않는다 — 이미 공개된 과거 카드를 이 변경이
+        // 자동으로 PRIVATE 로 되돌리지 않는다는 뜻이기도 하다(기존 데이터 영향 없음).
+        Card existing = Card.fromExternal(1L, "c1", 1, "옛 제목", "옛 요약", null);
+        existing.applyReportType("MORNING_BRIEFING");
+        existing.changeVisibility("PUBLIC");
+        Report existingReport = Report.fromExternal(1L, "c1", 1, "옛 제목", "옛 요약", "옛 본문");
+        when(cardRepository.findByUserIdAndExternalContentId(1L, "c1")).thenReturn(Optional.of(existing));
+        when(reportRepository.findByUserIdAndExternalContentId(1L, "c1")).thenReturn(Optional.of(existingReport));
+
+        service.upsert(morningBriefing("c1", 2));
+
+        assertThat(existing.getVisibility()).isEqualTo("PUBLIC");
+        verify(userRepository, never()).findById(any());
     }
 
     @Test

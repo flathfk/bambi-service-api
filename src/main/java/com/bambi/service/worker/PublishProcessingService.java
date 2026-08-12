@@ -34,6 +34,9 @@ public class PublishProcessingService {
 
     private static final Logger log = LoggerFactory.getLogger(PublishProcessingService.class);
 
+    /** V1 CHECK 제약(PRIVATE/PUBLIC)의 비공개 값. 새 값을 만들지 않고 기존 계약을 그대로 쓴다. */
+    private static final String VISIBILITY_PRIVATE = "PRIVATE";
+
     private final CardRepository cardRepository;
     private final ReportRepository reportRepository;
     private final NotificationService notificationService;
@@ -97,8 +100,8 @@ public class PublishProcessingService {
             // 사용자 설정(V17)을 신규 발행 카드에만 적용한다. 갱신 카드는 사용자가 이미 토글했을 수 있어 건드리지 않는다.
             User user = userRepository.findById(userId).orElse(null);
             if (user != null) {
-                // 발행 카드 기본 공개범위 = 사용자 설정(PRIVATE/PUBLIC). 발행 후 개별 토글 가능.
-                card.changeVisibility(user.getDefaultCardVisibility());
+                // 저장 직전에 한 번 결정한다 — 이 값이 그대로 저장되고 이후 경로가 다시 만지지 않는다.
+                card.changeVisibility(initialVisibility(card, user));
             }   // user 조회 실패(비정상) 시엔 종전 기본값 PRIVATE 유지.
 
             try {
@@ -130,6 +133,25 @@ public class PublishProcessingService {
         // 신규 발행일 때만 근사 매칭한다 — 재발행이 나중에 접수된 펜딩을 오완료하지 않게(우석 가드 2).
         pendingService.completeFromSnapshot(userId, item, card.getPublicId(), isNew);
         return true;   // 갱신은 dirty checking, 신규는 save 로 flush
+    }
+
+    /**
+     * 신규 발행 카드의 최초 공개범위.
+     *
+     * <p>기본은 사용자 설정(V17 {@code default_card_visibility})이지만, <b>아침 브리핑은 설정과
+     * 무관하게 항상 PRIVATE</b> 이다. {@code CardService.changeVisibility} 가 아침 브리핑의
+     * PRIVATE→PUBLIC 전환을 막고 있는데(#100), 생성 시점에 PUBLIC 으로 저장되면 그 가드를 지나쳐
+     * 처음부터 공개된 채로 남는다 — 전환 차단만으로는 공개 경로가 닫히지 않는다.
+     *
+     * <p>판별은 제목·생성 시각 같은 간접 값이 아니라 카드에 방금 반영된 {@code report_type} 으로
+     * 한다. 같은 필드를 {@code CardService.changeVisibility} 가드도 읽으므로 두 판정이 어긋나지 않는다.
+     * 유형 미상(null·ON_DEMAND 등)은 종전대로 사용자 설정을 따른다.
+     */
+    private String initialVisibility(Card card, User user) {
+        if (GenerationPendingService.REPORT_TYPE_MORNING_BRIEFING.equals(card.getReportType())) {
+            return VISIBILITY_PRIVATE;
+        }
+        return user.getDefaultCardVisibility();
     }
 
     /** 리포트(본문) upsert. 없으면 생성(저장→id 확보), 있으면 본문·인용 교체 후 반환. */
