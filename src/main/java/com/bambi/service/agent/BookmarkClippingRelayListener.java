@@ -56,7 +56,7 @@ public class BookmarkClippingRelayListener {
 
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
     public void onBookmarkSaved(BookmarkSavedEvent event) {
-        String sourceEventId = "bookmark-" + event.bookmarkId();
+        String sourceEventId = sourceEventId(event);
         boolean hasUrl = StringUtils.hasText(event.url());
         boolean hasPageContent = StringUtils.hasText(event.content())
                 && event.content().length() >= MIN_PAGE_CONTENT_LENGTH;
@@ -79,6 +79,46 @@ public class BookmarkClippingRelayListener {
             // 저장은 이미 커밋됨 — 중계 실패가 사용자 저장을 되돌리지 않는다.
             log.warn("[BookmarkRelay] agent 위키 중계 실패 (bookmarkId={}) — 저장은 유지", event.bookmarkId(), e);
         }
+    }
+
+    /**
+     * agent 멱등 키 — <b>북마크 ID + 저장 내용 지문</b>.
+     *
+     * <p><b>ID 만 쓰면 다시 저장해도 agent 가 무시한다(2026-08-13 확인).</b> 같은 URL 로 저장하면 새 행을
+     * 만들지 않고 기존 북마크의 제목·본문만 갱신하는데, 키가 {@code bookmark-{id}} 로 고정이라 agent 가
+     * "이미 처리한 원천"으로 보고 <b>먼저 끝난 job 을 그대로 돌려준다</b>. 실사례: 같은 호텔 URL 에 키워드를
+     * 도쿄 → 상하이 → 발리로 바꿔 세 번 저장했는데 job 은 첫 건 하나뿐이었고(응답 job_id 동일),
+     * 상하이·발리는 위키에 영영 들어가지 못해 [AI 가 최근 발견한 관심사]에도 뜨지 않았다.
+     *
+     * <p>그래서 <b>저장 내용의 해시</b>를 뒤에 붙인다. 내용이 그대로면 지문도 같아 중복 처리를 막는
+     * 멱등성이 유지되고(재시도·같은 내용 재저장은 여전히 1건), 내용이 실제로 바뀔 때만 새 키가 되어
+     * agent 가 다시 읽는다. {@code updatedAt} 을 쓰지 않는 이유는 {@code @UpdateTimestamp} 가 flush
+     * 시점에 채워져, 이벤트를 만드는 시점에는 아직 <b>갱신 전 값</b>일 수 있어서다.
+     */
+    private static String sourceEventId(BookmarkSavedEvent event) {
+        return "bookmark-" + event.bookmarkId() + "-" + fingerprint(event);
+    }
+
+    /** 저장 내용(URL·제목·본문) 지문 12자 — 구분자는 본문에 나올 수 없는 NUL 로 둬 경계를 섞지 않는다. */
+    private static String fingerprint(BookmarkSavedEvent event) {
+        String material = String.join("\0",
+                nullToEmpty(event.url()), nullToEmpty(event.title()), nullToEmpty(event.content()));
+        try {
+            byte[] digest = java.security.MessageDigest.getInstance("SHA-256")
+                    .digest(material.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            StringBuilder hex = new StringBuilder(12);
+            for (int i = 0; i < 6; i++) {
+                hex.append(String.format("%02x", digest[i]));
+            }
+            return hex.toString();
+        } catch (java.security.NoSuchAlgorithmException e) {
+            // SHA-256 은 JDK 표준 필수 알고리즘이라 도달하지 않는다.
+            throw new IllegalStateException("SHA-256 미지원", e);
+        }
+    }
+
+    private static String nullToEmpty(String value) {
+        return value == null ? "" : value;
     }
 
     /**
