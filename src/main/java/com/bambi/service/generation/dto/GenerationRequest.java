@@ -25,7 +25,6 @@ import java.util.List;
  * @param generationScope 생략 시 기존 단일·다중 주제 생성. {@code INTEREST_BUNDLE}이면 현재 활성
  *                       Wiki 관심사와 연결 노드 묶음을 사용하고, {@code WIKI_BRIEFING}이면
  *                       Agent Worker가 날짜별 개인 Wiki 주제를 준비한 뒤 생성한다.
- * @param navigationProfile 온디맨드 단일 주제의 개인 Wiki 탐색 정책. 아침·온보딩은 생략한다.
  * @param interestId     {@code INTEREST_BUNDLE}에서 사용할 현재 활성 Wiki 관심사 UUID.
  * @param topic          topics 가 없으면 실제 검색어(1~500자), 있으면 카드 제목용 문구.
  * @param topics         한 리포트가 함께 다룰 주제 목록(최대 5개). 순서가 곧 리포트 섹션 순서다.
@@ -46,7 +45,6 @@ import java.util.List;
 public record GenerationRequest(
         @JsonProperty("idempotency_key") String idempotencyKey,
         @JsonProperty("generation_scope") String generationScope,
-        @JsonProperty("navigation_profile") String navigationProfile,
         @JsonProperty("interest_id") String interestId,
         @JsonProperty("topic") String topic,
         @JsonProperty("topics") List<String> topics,
@@ -58,11 +56,8 @@ public record GenerationRequest(
         @JsonProperty("report_type") String reportType,
         @JsonProperty("change_history_enabled") Boolean changeHistoryEnabled) {
 
-    public static final String ON_DEMAND_NAVIGATION_PROFILE = "ON_DEMAND_2HOP";
-
     /**
-     * 단일 주제 요청 — {@code topic} 이 <b>실제 검색어</b>다.
-     * 온디맨드 전용 탐색 정책이 필요하면 {@link #onDemandTopic}을 사용한다.
+     * 단일 주제 요청 — {@code topic} 이 <b>실제 검색어</b>다. 온디맨드가 쓴다.
      * 여기에는 절대 고정 문구를 넣지 않는다(그 문구로 검색한다).
      */
     public static GenerationRequest singleTopic(String idempotencyKey, String searchTopic,
@@ -80,27 +75,8 @@ public record GenerationRequest(
     public static GenerationRequest singleTopic(String idempotencyKey, String searchTopic,
                                                 String contentType, String reportType,
                                                 boolean changeHistory) {
-        return new GenerationRequest(idempotencyKey, null, null, null, searchTopic, List.of(),
-                contentType, null, null, null, reportType, changeHistory ? Boolean.TRUE : null);
-    }
-
-    /** 온디맨드 단일 주제 요청 — 개인 Wiki를 고정된 2-hop 예산으로 읽는다. */
-    public static GenerationRequest onDemandTopic(String idempotencyKey, String searchTopic,
-                                                  String contentType, String reportType,
-                                                  boolean changeHistory) {
-        return new GenerationRequest(
-                idempotencyKey,
-                null,
-                ON_DEMAND_NAVIGATION_PROFILE,
-                null,
-                searchTopic,
-                List.of(),
-                contentType,
-                null,
-                null,
-                null,
-                reportType,
-                changeHistory ? Boolean.TRUE : null);
+        return new GenerationRequest(idempotencyKey, null, null, searchTopic, List.of(), contentType,
+                null, null, null, reportType, changeHistory ? Boolean.TRUE : null);
     }
 
     /**
@@ -135,7 +111,7 @@ public record GenerationRequest(
             throw new IllegalArgumentException(
                     "topics 없이 제목용 문구를 topic 으로 보내면 그 문구로 검색된다 — 호출 전에 걸러야 한다.");
         }
-        return new GenerationRequest(idempotencyKey, null, null, null, titleTopic,
+        return new GenerationRequest(idempotencyKey, null, null, titleTopic,
                 List.copyOf(topics), contentType, null, null, null, reportType,
                 changeHistory ? Boolean.TRUE : null);
     }
@@ -167,8 +143,8 @@ public record GenerationRequest(
         GenerationRequest request = multiTopic(
                 idempotencyKey, titleTopic, topics, contentType, reportType, changeHistory);
         return new GenerationRequest(
-                request.idempotencyKey(), request.generationScope(), request.navigationProfile(),
-                request.interestId(), request.topic(), request.topics(), request.contentType(), briefingDate,
+                request.idempotencyKey(), request.generationScope(), request.interestId(),
+                request.topic(), request.topics(), request.contentType(), briefingDate,
                 request.language(), request.scheduledAt(), request.reportType(),
                 request.changeHistoryEnabled());
     }
@@ -195,7 +171,6 @@ public record GenerationRequest(
         return new GenerationRequest(
                 idempotencyKey,
                 "WIKI_BRIEFING",
-                null,
                 null,
                 titleTopic.strip(),
                 List.of(),
@@ -228,8 +203,8 @@ public record GenerationRequest(
         if (interestId == null || interestId.isBlank()) {
             throw new IllegalArgumentException("INTEREST_BUNDLE에는 현재 활성 interestId가 필요하다.");
         }
-        return new GenerationRequest(idempotencyKey, "INTEREST_BUNDLE", null,
-                interestId.strip(), null, List.of(), contentType, null, null, null, reportType,
+        return new GenerationRequest(idempotencyKey, "INTEREST_BUNDLE", interestId.strip(),
+                null, List.of(), contentType, null, null, null, reportType,
                 changeHistory ? Boolean.TRUE : null);
     }
 }

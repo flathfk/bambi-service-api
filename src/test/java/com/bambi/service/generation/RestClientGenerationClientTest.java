@@ -64,26 +64,6 @@ class RestClientGenerationClientTest {
     }
 
     @Test
-    @DisplayName("온디맨드 생성 요청: 2-hop Wiki 탐색 프로필을 snake_case로 싣는다")
-    void onDemandRequestSendsNavigationProfile() {
-        server.expect(requestTo("http://agent.local/internal/v1/users/23/generations"))
-                .andExpect(method(HttpMethod.POST))
-                .andExpect(jsonPath("$.topic").value("반도체"))
-                .andExpect(jsonPath("$.navigation_profile").value("ON_DEMAND_2HOP"))
-                .andExpect(jsonPath("$.report_type").value("ON_DEMAND"))
-                .andRespond(withStatus(HttpStatus.ACCEPTED)
-                        .body("{\"job_id\":\"job-2\",\"status\":\"queued\"}")
-                        .contentType(MediaType.APPLICATION_JSON));
-
-        GenerationRequest request = GenerationRequest.onDemandTopic(
-                "ondemand-23-interest_news_card-반도체-ON_DEMAND_2HOP-1",
-                "반도체", "interest_news_card", "ON_DEMAND", false);
-
-        assertThat(client.requestGeneration(23L, request)).isEqualTo("job-2");
-        server.verify();
-    }
-
-    @Test
     @DisplayName("생성 요청: 컨텍스트 없는 사용자(409)는 AGENT_UNAVAILABLE 로 변환한다")
     void contextMissingMapsToUnavailable() {
         server.expect(requestTo("http://agent.local/internal/v1/users/9/generations"))
