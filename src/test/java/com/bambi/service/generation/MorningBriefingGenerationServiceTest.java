@@ -75,6 +75,39 @@ class MorningBriefingGenerationServiceTest {
     }
 
     @Test
+    void 즉시_생성은_Snapshot_미준비여도_Wiki_준비_Job으로_접수한다() {
+        LocalDate date = LocalDate.of(2026, 8, 12);
+        when(briefingTopicService.resolveForMorningBriefing(7L, date))
+                .thenReturn(MorningBriefingTopics.notPrepared());
+        when(submissionService.submit(eq(7L), any(), any(), any()))
+                .thenReturn(new GenerationSubmissionService.Submission("pending-7", "job-7"));
+
+        var result = service.submitWithPreparation(7L, "dev-morning-7", date);
+
+        assertThat(result).isPresent();
+        ArgumentCaptor<GenerationRequest> request = ArgumentCaptor.forClass(GenerationRequest.class);
+        verify(submissionService).submit(
+                eq(7L), request.capture(),
+                eq(GenerationPendingService.REPORT_TYPE_MORNING_BRIEFING),
+                eq(MorningBriefingGenerationService.TITLE_TOPIC));
+        assertThat(request.getValue().generationScope()).isEqualTo("WIKI_BRIEFING");
+        assertThat(request.getValue().briefingDate()).isEqualTo(date);
+        assertThat(request.getValue().interestId()).isNull();
+        assertThat(request.getValue().topics()).isEmpty();
+    }
+
+    @Test
+    void 즉시_생성도_준비_완료_Wiki_주제가_없으면_건너뛴다() {
+        LocalDate date = LocalDate.of(2026, 8, 12);
+        when(briefingTopicService.resolveForMorningBriefing(7L, date))
+                .thenReturn(MorningBriefingTopics.ready(List.of()));
+
+        assertThat(service.submitWithPreparation(7L, "dev-morning-7", date)).isEmpty();
+
+        verify(submissionService, never()).submit(any(Long.class), any(), any(), any());
+    }
+
+    @Test
     void 계정_설정이_켜지면_아침_브리핑에도_변경점_플래그를_싣는다() {
         // 🚨 2026-08-12 요구: 설정을 켜면 온디맨드뿐 아니라 **모든 보고서**가 변경점 형식이다.
         // 그전까지 이 경로는 값을 아예 안 실어 보내 설정이 무시됐다.

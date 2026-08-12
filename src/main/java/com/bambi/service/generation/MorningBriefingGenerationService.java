@@ -42,8 +42,8 @@ public class MorningBriefingGenerationService {
     }
 
     /**
-     * 아침 브리핑을 즉시 접수한다. 생성할 주제가 없으면 Agent에 고정 제목을 검색어로 보내지 않고
-     * 빈 결과를 반환한다. 멱등키의 시간 창은 스케줄러·개발 API 등 호출자가 소유한다.
+     * 준비된 아침 브리핑을 접수한다. 생성할 주제가 없으면 Agent에 고정 제목을 검색어로 보내지 않고
+     * 빈 결과를 반환하며, 미준비 상태는 호출자가 재시도할 수 있게 예외로 알린다.
      */
     public Optional<GenerationSubmissionService.Submission> submit(
             long userId,
@@ -61,7 +61,47 @@ public class MorningBriefingGenerationService {
         if (!resolved.prepared()) {
             throw new BriefingPreparationPendingException(userId);
         }
-        List<String> topics = resolved.topics();
+        return submitResolved(userId, idempotencyKey, briefingDate, resolved.topics());
+    }
+
+    /** 즉시 생성은 미준비 상태도 Agent Job 안에서 Wiki 준비 후 생성을 이어간다. */
+    public Optional<GenerationSubmissionService.Submission> submitWithPreparation(
+            long userId,
+            String idempotencyKey) {
+        return submitWithPreparation(userId, idempotencyKey, LocalDate.now(KST));
+    }
+
+    /** 지정 날짜의 즉시 생성에서 미준비 Snapshot을 비동기 Wiki 준비와 연결한다. */
+    public Optional<GenerationSubmissionService.Submission> submitWithPreparation(
+            long userId,
+            String idempotencyKey,
+            LocalDate briefingDate) {
+        MorningBriefingTopics resolved =
+                briefingTopicService.resolveForMorningBriefing(userId, briefingDate);
+        if (resolved.prepared()) {
+            return submitResolved(userId, idempotencyKey, briefingDate, resolved.topics());
+        }
+
+        boolean changeHistory = changeHistorySettings.isEnabled(userId);
+        GenerationRequest request = GenerationRequest.wikiBriefing(
+                deltaAwareKey(idempotencyKey, changeHistory),
+                TITLE_TOPIC,
+                contentType,
+                GenerationPendingService.REPORT_TYPE_MORNING_BRIEFING,
+                briefingDate,
+                changeHistory);
+        return Optional.of(submissionService.submit(
+                userId,
+                request,
+                GenerationPendingService.REPORT_TYPE_MORNING_BRIEFING,
+                TITLE_TOPIC));
+    }
+
+    private Optional<GenerationSubmissionService.Submission> submitResolved(
+            long userId,
+            String idempotencyKey,
+            LocalDate briefingDate,
+            List<String> topics) {
         if (topics.isEmpty()) {
             return Optional.empty();
         }

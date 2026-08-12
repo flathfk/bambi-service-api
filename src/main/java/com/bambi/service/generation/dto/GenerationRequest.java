@@ -23,7 +23,8 @@ import java.util.List;
  *
  * @param idempotencyKey {날짜윈도우}-{userId}-{contentType} 규칙 — 스케줄러 재시도·중복 실행에도 Job 1개.
  * @param generationScope 생략 시 기존 단일·다중 주제 생성. {@code INTEREST_BUNDLE}이면 현재 활성
- *                       Wiki 관심사와 연결 노드 묶음을 사용한다.
+ *                       Wiki 관심사와 연결 노드 묶음을 사용하고, {@code WIKI_BRIEFING}이면
+ *                       Agent Worker가 날짜별 개인 Wiki 주제를 준비한 뒤 생성한다.
  * @param interestId     {@code INTEREST_BUNDLE}에서 사용할 현재 활성 Wiki 관심사 UUID.
  * @param topic          topics 가 없으면 실제 검색어(1~500자), 있으면 카드 제목용 문구.
  * @param topics         한 리포트가 함께 다룰 주제 목록(최대 5개). 순서가 곧 리포트 섹션 순서다.
@@ -146,6 +147,39 @@ public record GenerationRequest(
                 request.topic(), request.topics(), request.contentType(), briefingDate,
                 request.language(), request.scheduledAt(), request.reportType(),
                 request.changeHistoryEnabled());
+    }
+
+    /**
+     * 날짜별 Snapshot이 아직 없는 즉시 아침 브리핑 요청.
+     *
+     * <p>{@code topics}는 비워 두고 Agent의 {@code WIKI_BRIEFING} Worker가 개인 Wiki에서
+     * 최대 3개를 선정·예열한 뒤 같은 Job에서 생성한다. 등록 관심사 ID는 사용하지 않는다.
+     */
+    public static GenerationRequest wikiBriefing(
+            String idempotencyKey,
+            String titleTopic,
+            String contentType,
+            String reportType,
+            LocalDate briefingDate,
+            boolean changeHistory) {
+        if (briefingDate == null) {
+            throw new IllegalArgumentException("Wiki 아침 브리핑 생성에는 briefingDate가 필요하다.");
+        }
+        if (titleTopic == null || titleTopic.isBlank()) {
+            throw new IllegalArgumentException("Wiki 아침 브리핑 생성에는 제목 문구가 필요하다.");
+        }
+        return new GenerationRequest(
+                idempotencyKey,
+                "WIKI_BRIEFING",
+                null,
+                titleTopic.strip(),
+                List.of(),
+                contentType,
+                briefingDate,
+                null,
+                null,
+                reportType,
+                changeHistory ? Boolean.TRUE : null);
     }
 
     /**

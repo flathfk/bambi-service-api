@@ -41,7 +41,7 @@ class DevelopmentReportGenerationServiceTest {
 
     @Test
     void 아침_리포트는_공통_생성_서비스를_즉시_호출한다() {
-        when(morningService.submit(eq(28L), any()))
+        when(morningService.submitWithPreparation(eq(28L), any()))
                 .thenReturn(Optional.of(new GenerationSubmissionService.Submission("pending-1", "job-1")));
 
         GenerationTriggerResponse response = service.generateMorning(28L);
@@ -49,13 +49,13 @@ class DevelopmentReportGenerationServiceTest {
         assertThat(response.id()).isEqualTo("pending-1");
         assertThat(response.agentJobId()).isEqualTo("job-1");
         ArgumentCaptor<String> key = ArgumentCaptor.forClass(String.class);
-        verify(morningService).submit(eq(28L), key.capture());
+        verify(morningService).submitWithPreparation(eq(28L), key.capture());
         assertThat(key.getValue()).startsWith("dev-morning-28-");
     }
 
     @Test
     void 아침_주제가_없으면_검증_오류로_거절한다() {
-        when(morningService.submit(eq(28L), any())).thenReturn(Optional.empty());
+        when(morningService.submitWithPreparation(eq(28L), any())).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> service.generateMorning(28L))
                 .isInstanceOf(ApiException.class)

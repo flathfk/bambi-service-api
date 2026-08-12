@@ -49,9 +49,10 @@ public class DevelopmentReportGenerationService {
     /** 실제 아침 브리핑 경로를 예약 없이 즉시 접수한다. */
     public GenerationTriggerResponse generateMorning(long userId) {
         GenerationSubmissionService.Submission submission = morningBriefingGenerationService
-                .submit(userId, minuteKey("dev-morning", userId, null))
+                .submitWithPreparation(userId, minuteKey("dev-morning", userId, null))
                 .orElseThrow(() -> new ApiException(
-                        ErrorCode.VALIDATION_ERROR, "생성할 아침 브리핑 관심사가 없습니다."));
+                        ErrorCode.VALIDATION_ERROR,
+                        "개인 Wiki에서 생성할 아침 브리핑 주제를 찾지 못했습니다."));
         log.info("[DevelopmentReportGeneration] 아침 리포트 즉시 생성 userId={}, pendingId={}, agentJobId={}",
                 userId, submission.pendingId(), submission.agentJobId());
         return GenerationTriggerResponse.accepted(submission.pendingId(), submission.agentJobId());
