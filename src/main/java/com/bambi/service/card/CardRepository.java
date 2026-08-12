@@ -19,6 +19,8 @@ public interface CardRepository extends JpaRepository<Card, Long> {
      * sources 를 @EntityGraph 로 1-shot 로딩해 N+1 을 차단한다.
      */
     @EntityGraph(attributePaths = "sources")
+    @Query("select c from Card c where c.userId = :userId and c.deletedAt is null "
+            + "and c.availableAt <= current_timestamp order by c.createdAt desc")
     List<Card> findByUserIdAndDeletedAtIsNullOrderByCreatedAtDesc(Long userId);
 
     /**
@@ -27,6 +29,8 @@ public interface CardRepository extends JpaRepository<Card, Long> {
      * 남의 카드도 존재 노출 없이 empty(404) 로 처리된다.
      */
     @EntityGraph(attributePaths = "sources")
+    @Query("select c from Card c where c.publicId = :publicId and c.userId = :userId "
+            + "and c.deletedAt is null and c.availableAt <= current_timestamp")
     Optional<Card> findByPublicIdAndUserIdAndDeletedAtIsNull(UUID publicId, Long userId);
 
     /** 발행 워커의 멱등 Upsert 판단용 — 같은 사용자+external_content_id 카드 존재 여부 */
@@ -45,9 +49,14 @@ public interface CardRepository extends JpaRepository<Card, Long> {
      * 소유자 검증 없이 대외 식별자(publicId)로 살아있는 카드 조회.
      * 카드 공개설정 변경(소유자 재확인은 서비스에서)·좋아요 대상 해석(PUBLIC 여부 확인)에 쓴다.
      */
+    @Query("select c from Card c where c.publicId = :publicId and c.deletedAt is null "
+            + "and c.availableAt <= current_timestamp")
     Optional<Card> findByPublicIdAndDeletedAtIsNull(UUID publicId);
 
     /** 공개 프로필의 공개 카드 수. */
+    @Query("select count(c) from Card c where c.userId = :userId "
+            + "and c.visibility = :visibility and c.deletedAt is null "
+            + "and c.availableAt <= current_timestamp")
     long countByUserIdAndVisibilityAndDeletedAtIsNull(Long userId, String visibility);
 
     /**
@@ -55,15 +64,30 @@ public interface CardRepository extends JpaRepository<Card, Long> {
      * ⚠️ Card 에 발행-이벤트 타임스탬프가 없어 createdAt 으로 근사한다(공개 토글 시각 아님).
      */
     @Query("select max(c.createdAt) from Card c "
-            + "where c.userId = :userId and c.visibility = 'PUBLIC' and c.deletedAt is null")
+            + "where c.userId = :userId and c.visibility = 'PUBLIC' and c.deletedAt is null "
+            + "and c.availableAt <= current_timestamp")
     OffsetDateTime findLastPublishedAt(@Param("userId") Long userId);
 
     /** 프로필 "이번 주 공개 개수" — since(=지금-7일) 이후 생성된 PUBLIC 카드 수(롤링 7일). */
+    @Query("select count(c) from Card c where c.userId = :userId "
+            + "and c.visibility = :visibility and c.deletedAt is null "
+            + "and c.createdAt > :since and c.availableAt <= current_timestamp")
     long countByUserIdAndVisibilityAndDeletedAtIsNullAndCreatedAtAfter(
             Long userId, String visibility, OffsetDateTime since);
 
     /** 이 리포트를 참조하는 특정 공개설정(PUBLIC 등) 카드가 살아있나 — 리포트 본문 접근 권한 판단용. */
+    @Query("select (count(c) > 0) from Card c where c.reportId = :reportId "
+            + "and c.visibility = :visibility and c.deletedAt is null "
+            + "and c.availableAt <= current_timestamp")
     boolean existsByReportIdAndVisibilityAndDeletedAtIsNull(Long reportId, String visibility);
+
+    /** 소유자의 리포트 본문도 연결 카드의 노출 시각 전에는 열지 않는다. */
+    @Query("select (count(c) > 0) from Card c where c.reportId = :reportId "
+            + "and c.userId = :userId and c.deletedAt is null "
+            + "and c.availableAt <= current_timestamp")
+    boolean existsReleasedByReportIdAndUserId(
+            @Param("reportId") Long reportId,
+            @Param("userId") Long userId);
 
     /**
      * 공개 피드(전체) — PUBLIC 카드를 최신순으로.
@@ -72,11 +96,12 @@ public interface CardRepository extends JpaRepository<Card, Long> {
      * idx_cards_public_feed 가 살아나고, sources 는 Card.sources 의 @BatchSize 로 IN 배치 로딩된다.
      */
     @Query("select c from Card c where c.visibility = 'PUBLIC' and c.deletedAt is null "
-            + "order by c.createdAt desc")
+            + "and c.availableAt <= current_timestamp order by c.createdAt desc")
     List<Card> findPublicFeed(Pageable pageable);
 
     /** 공개 피드(팔로잉 스코프) — 내가 팔로우하는 작성자의 PUBLIC 카드만. (@BatchSize 로 sources 배치 로딩) */
     @Query("select c from Card c where c.visibility = 'PUBLIC' and c.deletedAt is null "
+            + "and c.availableAt <= current_timestamp "
             + "and c.userId in :authorIds order by c.createdAt desc")
     List<Card> findPublicFeedByAuthors(@Param("authorIds") Collection<Long> authorIds, Pageable pageable);
 

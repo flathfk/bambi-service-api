@@ -4,6 +4,7 @@ import com.bambi.service.agent.publish.dto.PublishItem;
 import com.bambi.service.card.Card;
 import com.bambi.service.card.CardRepository;
 import com.bambi.service.generation.GenerationPendingService;
+import com.bambi.service.generation.MorningBriefingReleasePolicy;
 import com.bambi.service.notification.NotificationService;
 import com.bambi.service.report.Report;
 import com.bambi.service.report.ReportRepository;
@@ -12,6 +13,7 @@ import com.bambi.service.user.UserRepository;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
+import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Optional;
 
@@ -34,9 +36,11 @@ class PublishProcessingServiceTest {
     private final NotificationService notificationService = mock(NotificationService.class);
     private final UserRepository userRepository = mock(UserRepository.class);
     private final GenerationPendingService pendingService = mock(GenerationPendingService.class);
+    private final MorningBriefingReleasePolicy releasePolicy = new MorningBriefingReleasePolicy(7);
     private final PublishProcessingService service =
             new PublishProcessingService(
-                    cardRepository, reportRepository, notificationService, userRepository, pendingService);
+                    cardRepository, reportRepository, notificationService, userRepository,
+                    pendingService, releasePolicy);
 
     private static PublishItem item(String contentId, int version, String title, String summary) {
         // content_tags·report_type 미도착(단계적 롤아웃 전) → tags(topic) 폴백 + reportType null 경로
@@ -79,7 +83,8 @@ class PublishProcessingServiceTest {
                 org.mockito.ArgumentMatchers.eq("제목"),
                 org.mockito.ArgumentMatchers.eq("요약"),
                 any(),
-                org.mockito.ArgumentMatchers.isNull());
+                org.mockito.ArgumentMatchers.isNull(),
+                any());
     }
 
     @Test
@@ -177,7 +182,31 @@ class PublishProcessingServiceTest {
                 org.mockito.ArgumentMatchers.eq("제목"),
                 org.mockito.ArgumentMatchers.eq("요약"),
                 any(),
-                org.mockito.ArgumentMatchers.eq("ON_DEMAND"));
+                org.mockito.ArgumentMatchers.eq("ON_DEMAND"),
+                any());
+    }
+
+    @Test
+    void 정기_아침_브리핑은_카드와_알림을_07시까지_숨긴다() {
+        when(cardRepository.findByUserIdAndExternalContentId(1L, "c1"))
+                .thenReturn(Optional.empty());
+        when(reportRepository.findByUserIdAndExternalContentId(1L, "c1"))
+                .thenReturn(Optional.empty());
+        when(reportRepository.save(any(Report.class))).thenAnswer(inv -> inv.getArgument(0));
+        PublishItem item = new PublishItem(
+                "c1", "1", 1, "hash-1", "아침 브리핑", "요약", "본문",
+                List.of(), List.of(), List.of("반도체"), "MORNING_BRIEFING",
+                "2026-08-12-1-interest_news_card", null, null, null, null);
+
+        service.upsert(item);
+
+        OffsetDateTime releaseAt = OffsetDateTime.parse("2026-08-12T07:00:00+09:00");
+        ArgumentCaptor<Card> cardCaptor = ArgumentCaptor.forClass(Card.class);
+        verify(cardRepository).save(cardCaptor.capture());
+        assertThat(cardCaptor.getValue().getAvailableAt()).isEqualTo(releaseAt);
+        verify(notificationService).notifyReportReady(
+                eq(1L), eq("c1"), eq(1), eq("아침 브리핑"), eq("요약"),
+                any(), eq("MORNING_BRIEFING"), eq(releaseAt));
     }
 
     @Test
@@ -237,7 +266,7 @@ class PublishProcessingServiceTest {
         verify(cardRepository, never()).save(any(Card.class));
         verify(reportRepository, never()).save(any(Report.class));
         verify(notificationService, never()).notifyReportReady(
-                any(), any(), any(), any(), any(), any(), any());
+                any(), any(), any(), any(), any(), any(), any(), any());
     }
 
     @Test
@@ -292,7 +321,8 @@ class PublishProcessingServiceTest {
         ArgumentCaptor<Card> cardCaptor = ArgumentCaptor.forClass(Card.class);
         verify(cardRepository).save(cardCaptor.capture());
         assertThat(cardCaptor.getValue().getVisibility()).isEqualTo("PUBLIC");   // 하드코딩 PRIVATE 이 아니라 설정값
-        verify(notificationService).notifyReportReady(any(), any(), any(), any(), any(), any(), any());
+        verify(notificationService).notifyReportReady(
+                any(), any(), any(), any(), any(), any(), any(), any());
     }
 
     @Test
@@ -307,7 +337,7 @@ class PublishProcessingServiceTest {
 
         verify(cardRepository).save(any(Card.class));   // 발행 자체는 진행(카드 저장)
         verify(notificationService, never()).notifyReportReady(   // 알림만 "생성 안 함"
-                any(), any(), any(), any(), any(), any(), any());
+                any(), any(), any(), any(), any(), any(), any(), any());
     }
 
     @Test

@@ -4,6 +4,7 @@ import com.bambi.service.agent.publish.dto.PublishItem;
 import com.bambi.service.card.Card;
 import com.bambi.service.card.CardRepository;
 import com.bambi.service.generation.GenerationPendingService;
+import com.bambi.service.generation.MorningBriefingReleasePolicy;
 import com.bambi.service.notification.NotificationService;
 import com.bambi.service.report.Report;
 import com.bambi.service.report.ReportRepository;
@@ -15,6 +16,7 @@ import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.OffsetDateTime;
 import java.util.Optional;
 
 /**
@@ -37,18 +39,21 @@ public class PublishProcessingService {
     private final NotificationService notificationService;
     private final UserRepository userRepository;
     private final GenerationPendingService pendingService;
+    private final MorningBriefingReleasePolicy releasePolicy;
 
     public PublishProcessingService(
             CardRepository cardRepository,
             ReportRepository reportRepository,
             NotificationService notificationService,
             UserRepository userRepository,
-            GenerationPendingService pendingService) {
+            GenerationPendingService pendingService,
+            MorningBriefingReleasePolicy releasePolicy) {
         this.cardRepository = cardRepository;
         this.reportRepository = reportRepository;
         this.notificationService = notificationService;
         this.userRepository = userRepository;
         this.pendingService = pendingService;
+        this.releasePolicy = releasePolicy;
     }
 
     /**
@@ -84,8 +89,11 @@ public class PublishProcessingService {
         card.replaceInterestTags(item.interestTags());   // content_tags 우선(없으면 topic 폴백) 통째 교체
         card.replaceTaxonomyTopics(item.taxonomyVersion(), item.taxonomyTopicIds());   // 추천 매칭용 topic_key(관용)
         card.applyReportType(item.normalizedReportType());   // 생성 유형(없으면 null 유지 — 관용)
+        OffsetDateTime availableAt = releasePolicy.availableAt(
+                item.normalizedReportType(), item.requestIdempotencyKey());
 
         if (isNew) {
+            card.scheduleAvailability(availableAt);
             // 사용자 설정(V17)을 신규 발행 카드에만 적용한다. 갱신 카드는 사용자가 이미 토글했을 수 있어 건드리지 않는다.
             User user = userRepository.findById(userId).orElse(null);
             if (user != null) {
@@ -109,7 +117,8 @@ public class PublishProcessingService {
                         item.title(),
                         item.summary(),
                         report.getPublicId(),
-                        item.normalizedReportType());
+                        item.normalizedReportType(),
+                        availableAt);
             } else {
                 log.info("[PublishWorker] 알림수신 OFF → REPORT_READY 생성 생략 userId={} contentId={}",
                         userId, item.contentId());

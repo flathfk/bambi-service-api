@@ -3,6 +3,7 @@ package com.bambi.service.notification;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
+import java.time.OffsetDateTime;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -23,12 +24,13 @@ class NotificationServiceTest {
         service.notifyReportReady(7L, "content-1", 2, "제목", "요약", reportId, "MORNING_BRIEFING");
 
         verify(repository).insertReportReady(
-                7L,
-                "report-ready:content-1:v2",
-                "새 리포트가 준비됐어요: 제목",
-                "요약",
-                "/report/" + reportId,
-                "MORNING_BRIEFING");
+                eq(7L),
+                eq("report-ready:content-1:v2"),
+                eq("새 리포트가 준비됐어요: 제목"),
+                eq("요약"),
+                eq("/report/" + reportId),
+                eq("MORNING_BRIEFING"),
+                org.mockito.ArgumentMatchers.any(OffsetDateTime.class));
     }
 
     @Test
@@ -41,7 +43,8 @@ class NotificationServiceTest {
 
         verify(repository).insertReportReady(
                 eq(7L), eq("report-ready:content-1:v1"), anyString(), anyString(), anyString(),
-                org.mockito.ArgumentMatchers.isNull());
+                org.mockito.ArgumentMatchers.isNull(),
+                org.mockito.ArgumentMatchers.any(OffsetDateTime.class));
     }
 
     // ---- 팔로우 알림 (2026-08-11 여진 요청) ------------------------------------
@@ -100,7 +103,8 @@ class NotificationServiceTest {
 
         verify(repository).insertReportReady(
                 eq(7L), anyString(), title.capture(), body.capture(), anyString(),
-                org.mockito.ArgumentMatchers.isNull());
+                org.mockito.ArgumentMatchers.isNull(),
+                org.mockito.ArgumentMatchers.any(OffsetDateTime.class));
         assertThat(title.getValue()).hasSize(200);
         assertThat(body.getValue()).hasSize(500);
     }

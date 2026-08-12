@@ -69,6 +69,11 @@ public class Card {
     @Column(name = "report_type", length = 30)
     private String reportType;
 
+    // 생성 완료 시각과 사용자 노출 시각을 분리한다. 정기 아침 브리핑만 07시,
+    // 온디맨드·개발 즉시 생성은 생성 직후 시각을 쓴다.
+    @Column(name = "available_at", nullable = false)
+    private OffsetDateTime availableAt;
+
     // 관심사 태그 (why_for_you 폐기 대체) — agent 가 붙인 topic 문자열 집합.
     @ElementCollection
     @CollectionTable(name = "card_interest_tags", joinColumns = @JoinColumn(name = "card_id"))
@@ -115,6 +120,7 @@ public class Card {
         this.summary = summary;
         this.whyForYou = whyForYou;
         this.visibility = "PRIVATE";   // 공개 피드는 P1 — 기본 비공개
+        this.availableAt = OffsetDateTime.now();
     }
 
     /** agent 발행(Pull) 카드 — content_id/version 멱등 키를 함께 보관한다. */
@@ -154,6 +160,14 @@ public class Card {
         if (reportType != null) {
             this.reportType = reportType;
         }
+    }
+
+    /** 카드가 사용자 조회에 나타날 시각을 지정한다. */
+    public void scheduleAvailability(OffsetDateTime availableAt) {
+        if (availableAt == null) {
+            throw new IllegalArgumentException("카드 공개 예정 시각은 필수다.");
+        }
+        this.availableAt = availableAt;
     }
 
     public void addInterestTag(String tag) {
@@ -260,5 +274,9 @@ public class Card {
 
     public OffsetDateTime getCreatedAt() {
         return createdAt;
+    }
+
+    public OffsetDateTime getAvailableAt() {
+        return availableAt;
     }
 }

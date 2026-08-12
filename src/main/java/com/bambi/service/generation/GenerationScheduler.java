@@ -11,7 +11,7 @@ import org.springframework.stereotype.Component;
 import java.time.LocalDate;
 import java.time.ZoneId;
 
-/** 07시 아침 브리핑 생성 작업을 DB Outbox에 발행하는 경량 스케줄러. */
+/** 05시 아침 브리핑 사전 생성 작업을 DB Outbox에 발행하는 경량 스케줄러. */
 @Component
 @ConditionalOnProperty(name = "app.scheduler.generation.enabled", havingValue = "true")
 public class GenerationScheduler {
@@ -26,7 +26,7 @@ public class GenerationScheduler {
     }
 
     /** 매일 지정 시각에 오늘 활성 사용자의 생성 작업을 원자적으로 적재한다. */
-    @Scheduled(cron = "${app.scheduler.generation.cron:0 0 7 * * *}", zone = "Asia/Seoul")
+    @Scheduled(cron = "${app.scheduler.generation.cron:0 0 5 * * *}", zone = "Asia/Seoul")
     public void triggerDailyGeneration() {
         LocalDate scheduleDate = LocalDate.now(KST);
         GenerationSchedulePublisher.PublicationResult result = publisher.publish(

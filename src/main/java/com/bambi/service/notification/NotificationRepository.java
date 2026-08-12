@@ -6,25 +6,33 @@ import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
+import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Optional;
 
 /** 알림 조회와 멱등 생성을 담당하는 저장소. */
 public interface NotificationRepository extends JpaRepository<Notification, Long> {
 
+    @Query("select n from Notification n where n.userId = :userId "
+            + "and n.createdAt <= current_timestamp order by n.createdAt desc")
     List<Notification> findByUserIdOrderByCreatedAtDesc(Long userId, Pageable pageable);
 
+    @Query("select count(n) from Notification n where n.userId = :userId "
+            + "and n.readAt is null and n.createdAt <= current_timestamp")
     long countByUserIdAndReadAtIsNull(Long userId);
 
+    @Query("select n from Notification n where n.id = :id and n.userId = :userId "
+            + "and n.createdAt <= current_timestamp")
     Optional<Notification> findByIdAndUserId(Long id, Long userId);
 
     /** 같은 Agent 발행 이벤트를 재수신해도 알림을 한 번만 만든다. reportType 은 null 허용(관용). */
     @Modifying
     @Query(value = """
             INSERT INTO service.notifications (
-                user_id, event_key, type, title, body, target_path, report_type
+                user_id, event_key, type, title, body, target_path, report_type, created_at
             ) VALUES (
-                :userId, :eventKey, 'REPORT_READY', :title, :body, :targetPath, :reportType
+                :userId, :eventKey, 'REPORT_READY', :title, :body, :targetPath,
+                :reportType, :availableAt
             )
             ON CONFLICT (user_id, event_key) DO NOTHING
             """, nativeQuery = true)
@@ -34,7 +42,8 @@ public interface NotificationRepository extends JpaRepository<Notification, Long
             @Param("title") String title,
             @Param("body") String body,
             @Param("targetPath") String targetPath,
-            @Param("reportType") String reportType);
+            @Param("reportType") String reportType,
+            @Param("availableAt") OffsetDateTime availableAt);
 
     /**
      * 팔로우 알림 (2026-08-11 여진 요청 — FOLLOW 타입, 마이그레이션 불요).
