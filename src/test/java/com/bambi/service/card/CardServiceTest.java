@@ -158,6 +158,50 @@ class CardServiceTest {
     }
 
     @Test
+    void 비공개_아침_브리핑은_공개로_바꿀_수_없다() {
+        Card card = new Card(1L, "아침 브리핑", "요약", "왜 당신에게");
+        card.applyReportType("MORNING_BRIEFING");
+        when(cardRepository.findByPublicIdAndUserIdAndDeletedAtIsNull(any(), eq(1L)))
+                .thenReturn(Optional.of(card));
+
+        ApiException ex = catchThrowableOfType(
+                () -> service.changeVisibility(1L, UUID.randomUUID().toString(), "PUBLIC"),
+                ApiException.class);
+
+        assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.VALIDATION_ERROR);
+        assertThat(ex.getMessage()).isEqualTo("아침 브리핑은 공개로 전환할 수 없습니다.");
+        assertThat(card.getVisibility()).isEqualTo("PRIVATE");
+    }
+
+    @Test
+    void 기존에_공개된_아침_브리핑은_비공개로_바꿀_수_있다() {
+        Card card = new Card(1L, "아침 브리핑", "요약", "왜 당신에게");
+        card.applyReportType("MORNING_BRIEFING");
+        card.changeVisibility("PUBLIC");
+        when(cardRepository.findByPublicIdAndUserIdAndDeletedAtIsNull(any(), eq(1L)))
+                .thenReturn(Optional.of(card));
+
+        CardResponse res = service.changeVisibility(1L, UUID.randomUUID().toString(), "PRIVATE");
+
+        assertThat(card.getVisibility()).isEqualTo("PRIVATE");
+        assertThat(res.visibility()).isEqualTo("PRIVATE");
+    }
+
+    @Test
+    void 일반_보고서는_공개와_비공개를_모두_전환할_수_있다() {
+        Card card = new Card(1L, "일반 보고서", "요약", "왜 당신에게");
+        card.applyReportType("ON_DEMAND");
+        when(cardRepository.findByPublicIdAndUserIdAndDeletedAtIsNull(any(), eq(1L)))
+                .thenReturn(Optional.of(card));
+
+        service.changeVisibility(1L, UUID.randomUUID().toString(), "PUBLIC");
+        CardResponse res = service.changeVisibility(1L, UUID.randomUUID().toString(), "PRIVATE");
+
+        assertThat(card.getVisibility()).isEqualTo("PRIVATE");
+        assertThat(res.visibility()).isEqualTo("PRIVATE");
+    }
+
+    @Test
     void 남의_카드는_존재_노출_없이_NOT_FOUND() {
         when(cardRepository.findByPublicIdAndUserIdAndDeletedAtIsNull(any(), any()))
                 .thenReturn(Optional.empty());

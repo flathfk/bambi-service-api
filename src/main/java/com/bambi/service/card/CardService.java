@@ -23,6 +23,8 @@ import java.util.UUID;
 public class CardService {
 
     private static final String PUBLIC = "PUBLIC";
+    private static final String PRIVATE = "PRIVATE";
+    private static final String MORNING_BRIEFING = "MORNING_BRIEFING";
 
     private final CardRepository cardRepository;
     private final ReportRepository reportRepository;
@@ -75,6 +77,13 @@ public class CardService {
         UUID uuid = parseOrNotFound(publicId);
         Card card = cardRepository.findByPublicIdAndUserIdAndDeletedAtIsNull(uuid, userId)
                 .orElseThrow(() -> new ApiException(ErrorCode.NOT_FOUND, "카드를 찾을 수 없습니다."));
+        if (MORNING_BRIEFING.equals(card.getReportType())
+                && PRIVATE.equals(card.getVisibility())
+                && PUBLIC.equals(visibility)) {
+            throw new ApiException(
+                    ErrorCode.VALIDATION_ERROR,
+                    "아침 브리핑은 공개로 전환할 수 없습니다.");
+        }
         card.changeVisibility(visibility);   // dirty checking 으로 flush
         return CardResponse.from(card, reportPublicId(card));
     }
