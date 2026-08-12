@@ -113,6 +113,9 @@ public class FeedService {
      * <p>예전에는 여기서 publicId 만 뽑아 담았는데, 목록에 대표 이미지를 붙이면서
      * (2026-08-11 우석) 같은 객체의 cover_image 컬럼도 필요해졌다. <b>쿼리는 늘지 않는다</b> —
      * 리포트 엔티티는 이미 이 한 번의 조회로 전부 메모리에 올라와 있었고 값만 버리고 있었다.
+     *
+     * <p>공개 피드({@link #publicFeed})·작성자 카드({@link #publicCardsByAuthor})도 같은 헬퍼를 쓴다.
+     * 그쪽은 리포트를 안 읽고 있었으므로 <b>카드 목록당 IN 쿼리 1회가 는다</b>(카드별 재조회 아님).
      */
     private Map<Long, Report> reportsByReportId(List<Card> cards) {
         List<Long> reportIds = cards.stream()
@@ -180,12 +183,16 @@ public class FeedService {
                 .collect(Collectors.toMap(User::getId, Function.identity()));
         // ⑤ 추천 매칭 (뷰어 관심 topic/category ∩ 카드 topic) — 뷰어 관심/taxonomy 각 1회 조회, 카드별 재조회 없음
         Map<Long, Matched> matched = matchedByCard(viewerId, cards);
+        // ⑥ 카드→리포트 배치 매핑 (1 IN 쿼리) — 대표 이미지(cover_image) 출처. 내 피드와 같은 패턴.
+        Map<Long, Report> reports = reportsByReportId(cards);
 
         List<PublicCardResponse> responses = cards.stream()
                 .map(card -> {
                     Matched m = matched.getOrDefault(card.getId(), EMPTY_MATCHED);
                     return PublicCardResponse.from(
                             card,
+                            // 불변맵은 get(null) 에서 NPE 라 리포트 없는 카드는 조회하지 않는다(myFeed 와 동일).
+                            card.getReportId() == null ? null : reports.get(card.getReportId()),
                             authors.get(card.getUserId()),
                             likeCounts.getOrDefault(card.getId(), 0L),
                             likedIds.contains(card.getId()),
@@ -440,11 +447,14 @@ public class FeedService {
                         LikeRepository.CardLikeCount::getCount));
         Set<Long> likedIds = likedCardIds(viewerId, cardIds);
         Set<Long> scrappedIds = scrappedCardIds(viewerId, cardIds);
+        // 대표 이미지는 같은 DTO 를 쓰는 이상 경로마다 다르게 채우지 않는다(1 IN 쿼리).
+        Map<Long, Report> reports = reportsByReportId(cards);
 
         // 추천 매칭은 공개 피드(추천 레일) 전용 — 프로필 카드 목록은 매칭 미부여(빈 목록)로 스코프 유지.
         return cards.stream()
                 .map(card -> PublicCardResponse.from(
                         card,
+                        card.getReportId() == null ? null : reports.get(card.getReportId()),
                         author,
                         likeCounts.getOrDefault(card.getId(), 0L),
                         likedIds.contains(card.getId()),

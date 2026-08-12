@@ -266,6 +266,68 @@ class FeedServiceTest {
     }
 
     @Test
+    void 공개피드는_리포트_대표이미지를_채우고_리포트없는_카드는_null_이다() {
+        // 리포트 있는 카드 + 즉시(리포트 없는) 카드 — 게스트라 랭킹이 없어 순서가 그대로다.
+        Card withReport = mock(Card.class);
+        when(withReport.getId()).thenReturn(10L);
+        when(withReport.getUserId()).thenReturn(2L);
+        when(withReport.getReportId()).thenReturn(100L);
+        when(withReport.getPublicId()).thenReturn(UUID.randomUUID());
+        when(withReport.getSources()).thenReturn(List.of());
+        Card noReport = mock(Card.class);
+        when(noReport.getId()).thenReturn(11L);
+        when(noReport.getUserId()).thenReturn(2L);
+        when(noReport.getReportId()).thenReturn(null);
+        when(noReport.getPublicId()).thenReturn(UUID.randomUUID());
+        when(noReport.getSources()).thenReturn(List.of());
+        when(cardRepository.findPublicFeed(any())).thenReturn(List.of(withReport, noReport));
+        when(likeRepository.countByCardIds(anyCollection())).thenReturn(List.of());
+        User author = mock(User.class);
+        when(author.getId()).thenReturn(2L);
+        when(userRepository.findAllById(any())).thenReturn(List.of(author));
+        Report report = mock(Report.class);
+        when(report.getId()).thenReturn(100L);
+        when(report.getCoverImageUrl()).thenReturn("https://cdn.example.com/a.jpg");
+        when(report.getCoverImageSourceUrl()).thenReturn("https://news.example.com/a");
+        when(report.getCoverImageSourceTitle()).thenReturn("원문 제목");
+        when(report.getCoverImageReference()).thenReturn("L1");
+        when(reportRepository.findAllById(any())).thenReturn(List.of(report));
+
+        List<PublicCardResponse> feed = service.publicFeed(null, false, 20);
+
+        assertThat(feed).hasSize(2);
+        assertThat(feed.get(0).coverImage()).isNotNull();
+        assertThat(feed.get(0).coverImage().url()).isEqualTo("https://cdn.example.com/a.jpg");
+        assertThat(feed.get(0).coverImage().sourceUrl()).isEqualTo("https://news.example.com/a");
+        assertThat(feed.get(1).coverImage()).isNull();   // 즉시 카드 — 리포트가 없으니 이미지도 없다
+    }
+
+    @Test
+    void 공개피드_대표이미지는_url_이나_원문URL_이_없으면_null_이다() {
+        Card card = mock(Card.class);
+        when(card.getId()).thenReturn(10L);
+        when(card.getUserId()).thenReturn(2L);
+        when(card.getReportId()).thenReturn(100L);
+        when(card.getPublicId()).thenReturn(UUID.randomUUID());
+        when(card.getSources()).thenReturn(List.of());
+        when(cardRepository.findPublicFeed(any())).thenReturn(List.of(card));
+        when(likeRepository.countByCardIds(anyCollection())).thenReturn(List.of());
+        User author = mock(User.class);
+        when(author.getId()).thenReturn(2L);
+        when(userRepository.findAllById(any())).thenReturn(List.of(author));
+        // 이미지 URL 은 있는데 원문 URL 이 없는 리포트 — 반쪽짜리는 계약상 이미지 없음이다.
+        Report report = mock(Report.class);
+        when(report.getId()).thenReturn(100L);
+        when(report.getCoverImageUrl()).thenReturn("https://cdn.example.com/a.jpg");
+        when(report.getCoverImageSourceUrl()).thenReturn(null);
+        when(reportRepository.findAllById(any())).thenReturn(List.of(report));
+
+        List<PublicCardResponse> feed = service.publicFeed(null, false, 20);
+
+        assertThat(feed.get(0).coverImage()).isNull();
+    }
+
+    @Test
     void 게스트가_팔로잉_스코프를_요청하면_401() {
         ApiException ex = catchThrowableOfType(
                 () -> service.publicFeed(null, true, 20), ApiException.class);
