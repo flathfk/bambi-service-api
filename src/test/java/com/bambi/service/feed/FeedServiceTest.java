@@ -415,7 +415,7 @@ class FeedServiceTest {
     }
 
     @Test
-    void 랭킹_관심사가_맞는_오래된_카드가_무관한_최신_카드보다_위다() {
+    void 랭킹_무관한_최신_카드가_관심사가_맞는_오래된_카드보다_위다() {
         java.time.OffsetDateTime now = java.time.OffsetDateTime.now();
         Card fresh = rankCard(10L, now, Set.of("data_cloud"));          // 최신·비매칭
         Card matched = rankCard(11L, now.minusDays(5), Set.of("ai_ml")); // 오래됨·매칭
@@ -433,7 +433,31 @@ class FeedServiceTest {
 
         List<PublicCardResponse> feed = service.publicFeed(1L, false, 20);
 
-        // 관심 매칭(+100)이 신선도(+30)를 이긴다 — "내 관심사 먼저"
+        // 신선도(+150) > 매칭(+100) + 인기(최대 +40) — 2026-08-12 우석 "피드는 최신 정보가 뜨는 게 좋겠다".
+        // 24시간 이내 카드는 관심사가 안 맞아도 어제 것 위로 올라온다.
+        assertThat(feed.get(0).matchedTopics()).isEmpty();
+    }
+
+    @Test
+    void 랭킹_24시간_이내끼리는_관심사가_맞는_쪽이_위다() {
+        // "최신 우선, 그 안에서 개인화" — 신선도 가산이 같으면 종전대로 매칭이 순서를 가른다.
+        java.time.OffsetDateTime now = java.time.OffsetDateTime.now();
+        Card unmatchedNewer = rankCard(12L, now, Set.of("data_cloud"));
+        Card matchedOlder = rankCard(13L, now.minusHours(6), Set.of("ai_ml"));
+        when(cardRepository.findPublicFeed(any())).thenReturn(List.of(unmatchedNewer, matchedOlder));
+        when(likeRepository.countByCardIds(anyCollection())).thenReturn(List.of());
+        User author = mock(User.class);
+        when(author.getId()).thenReturn(2L);
+        when(userRepository.findAllById(any())).thenReturn(List.of(author));
+        when(interestRepository.findActiveTopicIds(1L)).thenReturn(List.of("ai_ml"));
+        when(interestRepository.findActiveCategoryIds(1L)).thenReturn(List.of());
+        when(interestRepository.findActiveUnlinkedNames(1L)).thenReturn(List.of());
+        when(cardRepository.findLikedCardTopicIds(1L)).thenReturn(List.of());
+        when(cardRepository.findScrappedCardTopicIds(1L)).thenReturn(List.of());
+        when(taxonomyService.getActiveTaxonomy()).thenReturn(sampleTaxonomy());
+
+        List<PublicCardResponse> feed = service.publicFeed(1L, false, 20);
+
         assertThat(feed.get(0).matchedTopics()).isNotEmpty();
     }
 
