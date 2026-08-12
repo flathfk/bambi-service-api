@@ -4,6 +4,7 @@ import com.bambi.service.generation.schedule.GenerationSchedulePhase;
 import com.bambi.service.generation.schedule.GenerationSchedulePublisher;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
+import org.springframework.scheduling.annotation.Scheduled;
 
 import java.time.LocalDate;
 
@@ -14,7 +15,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-/** {@link GenerationScheduler}가 07시 외부 호출 대신 생성 Outbox만 발행하는지 검증한다. */
+/** {@link GenerationScheduler}가 05시 외부 호출 대신 생성 Outbox만 발행하는지 검증한다. */
 class GenerationSchedulerTest {
 
     private final GenerationSchedulePublisher publisher = mock(GenerationSchedulePublisher.class);
@@ -39,5 +40,15 @@ class GenerationSchedulerTest {
         ArgumentCaptor<LocalDate> date = ArgumentCaptor.forClass(LocalDate.class);
         verify(publisher).publish(eq(GenerationSchedulePhase.MORNING_GENERATION), date.capture());
         assertThat(date.getValue()).isEqualTo(LocalDate.now(java.time.ZoneId.of("Asia/Seoul")));
+    }
+
+    @Test
+    void 기본_생성_시각은_05시다() throws NoSuchMethodException {
+        Scheduled scheduled = GenerationScheduler.class
+                .getMethod("triggerDailyGeneration")
+                .getAnnotation(Scheduled.class);
+
+        assertThat(scheduled.cron()).isEqualTo("${app.scheduler.generation.cron:0 0 5 * * *}");
+        assertThat(scheduled.zone()).isEqualTo("Asia/Seoul");
     }
 }
