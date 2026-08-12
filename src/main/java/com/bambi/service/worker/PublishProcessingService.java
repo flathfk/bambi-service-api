@@ -61,17 +61,13 @@ public class PublishProcessingService {
      */
     @Transactional
     public boolean upsert(PublishItem item) {
-        Long userId = item.userIdAsLong();
+        // userIdAsLong() 은 형식이 깨지면 예외를 던지므로 여기서 null 이 될 수 없다 → primitive 로 받는다.
+        long userId = item.userIdAsLong();
         Optional<Card> existingCard = cardRepository.findByUserIdAndExternalContentId(userId, item.contentId());
 
         // 버전 게이트: 카드의 저장 version 을 기준으로 최신 여부 판단(카드·리포트는 같은 content_id·version).
         if (existingCard.isPresent() && !isNewer(item.version(), existingCard.get().getExternalVersion())) {
-            log.info("[PublishWorker] 이미 최신 skip contentId={} (수신 v{}, 저장 v{})",
-                    item.contentId(), item.version(), existingCard.get().getExternalVersion());
-            // 신규 카드가 아니므로 근사 매칭은 걸지 않는다 — 연결 키가 있을 때만 닫힌다(우석 가드 2).
-            pendingService.completeFromSnapshot(
-                    userId, item, existingCard.get().getPublicId(), false);
-            return true;
+            return skipAlreadyLatest(userId, item, existingCard.get());
         }
 
         // 이 version 이 이긴다 → 본문(리포트) upsert 후 카드가 참조한다.
@@ -84,46 +80,12 @@ public class PublishProcessingService {
         if (!isNew) {
             card.updateExternal(item.version(), item.title(), item.summary());
         }
-        addSources(card, item);
-        card.linkReport(report.getId());
-        card.replaceInterestTags(item.interestTags());   // content_tags 우선(없으면 topic 폴백) 통째 교체
-        card.replaceTaxonomyTopics(item.taxonomyVersion(), item.taxonomyTopicIds());   // 추천 매칭용 topic_key(관용)
-        card.applyReportType(item.normalizedReportType());   // 생성 유형(없으면 null 유지 — 관용)
-        OffsetDateTime availableAt = releasePolicy.availableAt(
-                item.normalizedReportType(), item.requestIdempotencyKey());
+        applyCardFields(card, item, report);
 
-        if (isNew) {
-            card.scheduleAvailability(availableAt);
-            // 사용자 설정(V17)을 신규 발행 카드에만 적용한다. 갱신 카드는 사용자가 이미 토글했을 수 있어 건드리지 않는다.
-            User user = userRepository.findById(userId).orElse(null);
-            if (user != null) {
-                // 발행 카드 기본 공개범위 = 사용자 설정(PRIVATE/PUBLIC). 발행 후 개별 토글 가능.
-                card.changeVisibility(user.getDefaultCardVisibility());
-            }   // user 조회 실패(비정상) 시엔 종전 기본값 PRIVATE 유지.
-
-            try {
-                cardRepository.save(card);
-            } catch (DataIntegrityViolationException e) {
-                // 동시 워커/재시도로 유니크 인덱스 충돌 → 이미 발행된 것으로 간주(멱등).
-                log.info("[PublishWorker] 유니크 충돌 → 멱등 처리 contentId={}", item.contentId());
-                return true;
-            }
-            // REPORT_READY 알림: 사용자가 수신 OFF 면 알림을 "만들지 않는다"(만들고 숨기는 게 아님).
-            if (user == null || user.isReportReadyNotification()) {
-                notificationService.notifyReportReady(
-                        userId,
-                        item.contentId(),
-                        item.version(),
-                        item.title(),
-                        item.summary(),
-                        report.getPublicId(),
-                        item.normalizedReportType(),
-                        availableAt);
-            } else {
-                log.info("[PublishWorker] 알림수신 OFF → REPORT_READY 생성 생략 userId={} contentId={}",
-                        userId, item.contentId());
-            }
+        if (isNew && !saveNewCard(card, item, userId, report)) {
+            return true;   // 유니크 충돌 → 이미 발행된 것으로 간주(멱등)
         }
+
         log.info("[PublishWorker] 리포트+카드 {} contentId={} (v{}), reportId={}",
                 isNew ? "발행" : "갱신", item.contentId(), item.version(), report.getId());
         // 연결 키가 있으면 신규·갱신 모두 그것으로 정확히 닫는다. 키 없는 구 Snapshot 은
@@ -132,8 +94,70 @@ public class PublishProcessingService {
         return true;   // 갱신은 dirty checking, 신규는 save 로 flush
     }
 
+    /** 저장본이 이미 최신 — 재-claim/중복/구버전 도착. 저장은 건드리지 않고 펜딩만 닫는다. */
+    private boolean skipAlreadyLatest(long userId, PublishItem item, Card storedCard) {
+        log.info("[PublishWorker] 이미 최신 skip contentId={} (수신 v{}, 저장 v{})",
+                item.contentId(), item.version(), storedCard.getExternalVersion());
+        // 신규 카드가 아니므로 근사 매칭은 걸지 않는다 — 연결 키가 있을 때만 닫힌다(우석 가드 2).
+        pendingService.completeFromSnapshot(userId, item, storedCard.getPublicId(), false);
+        return true;
+    }
+
+    /** 신규·갱신 공통으로 반영하는 카드 필드(출처·리포트 링크·태그·생성 유형). */
+    private void applyCardFields(Card card, PublishItem item, Report report) {
+        addSources(card, item);
+        card.linkReport(report.getId());
+        card.replaceInterestTags(item.interestTags());   // content_tags 우선(없으면 topic 폴백) 통째 교체
+        card.replaceTaxonomyTopics(item.taxonomyVersion(), item.taxonomyTopicIds());   // 추천 매칭용 topic_key(관용)
+        card.applyReportType(item.normalizedReportType());   // 생성 유형(없으면 null 유지 — 관용)
+    }
+
+    /**
+     * 신규 발행 카드만의 처리 — 공개 시각·기본 공개범위·저장·완료 알림.
+     * 갱신 카드에는 적용하지 않는다(사용자가 이미 공개범위를 토글했을 수 있다).
+     *
+     * @return false = 유니크 충돌로 저장하지 않음(다른 워커가 이미 발행 → 멱등 처리)
+     */
+    private boolean saveNewCard(Card card, PublishItem item, long userId, Report report) {
+        OffsetDateTime availableAt = releasePolicy.availableAt(
+                item.normalizedReportType(), item.requestIdempotencyKey());
+        card.scheduleAvailability(availableAt);
+
+        // 사용자 설정(V17)을 신규 발행 카드에만 적용한다.
+        User user = userRepository.findById(userId).orElse(null);
+        if (user != null) {
+            // 발행 카드 기본 공개범위 = 사용자 설정(PRIVATE/PUBLIC). 발행 후 개별 토글 가능.
+            card.changeVisibility(user.getDefaultCardVisibility());
+        }   // user 조회 실패(비정상) 시엔 종전 기본값 PRIVATE 유지.
+
+        try {
+            cardRepository.save(card);
+        } catch (DataIntegrityViolationException e) {
+            // 동시 워커/재시도로 유니크 인덱스 충돌 → 이미 발행된 것으로 간주(멱등).
+            log.info("[PublishWorker] 유니크 충돌 → 멱등 처리 contentId={}", item.contentId());
+            return false;
+        }
+
+        // REPORT_READY 알림: 사용자가 수신 OFF 면 알림을 "만들지 않는다"(만들고 숨기는 게 아님).
+        if (user == null || user.isReportReadyNotification()) {
+            notificationService.notifyReportReady(
+                    userId,
+                    item.contentId(),
+                    item.version(),
+                    item.title(),
+                    item.summary(),
+                    report.getPublicId(),
+                    item.normalizedReportType(),
+                    availableAt);
+        } else {
+            log.info("[PublishWorker] 알림수신 OFF → REPORT_READY 생성 생략 userId={} contentId={}",
+                    userId, item.contentId());
+        }
+        return true;
+    }
+
     /** 리포트(본문) upsert. 없으면 생성(저장→id 확보), 있으면 본문·인용 교체 후 반환. */
-    private Report upsertReport(Long userId, PublishItem item) {
+    private Report upsertReport(long userId, PublishItem item) {
         Report report = reportRepository.findByUserIdAndExternalContentId(userId, item.contentId())
                 .orElse(null);
         if (report == null) {
