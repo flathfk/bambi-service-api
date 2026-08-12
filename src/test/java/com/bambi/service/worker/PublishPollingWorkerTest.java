@@ -4,6 +4,7 @@ import com.bambi.service.agent.publish.PublishSnapshotClient;
 import com.bambi.service.agent.publish.dto.AckRequest;
 import com.bambi.service.agent.publish.dto.ClaimResponse;
 import com.bambi.service.agent.publish.dto.PublishItem;
+import com.bambi.service.agent.publish.dto.PublishItemFixture;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
@@ -29,8 +30,7 @@ class PublishPollingWorkerTest {
     private final PublishPollingWorker worker = new PublishPollingWorker(client, processing);
 
     private void claimReturnsOneItem() {
-        PublishItem item = new PublishItem("c1", "mock-user-001", 1, "hash-1",
-                "제목", "요약", "본문", List.of(), List.of(), List.of(), null, null, null, null, null, null);
+        PublishItem item = PublishItemFixture.item().userId("mock-user-001").build();
         when(client.claim(any())).thenReturn(
                 new ClaimResponse("batch-1", OffsetDateTime.parse("2026-07-30T00:00:00Z"), List.of(item)));
     }

@@ -4,6 +4,7 @@ import com.bambi.service.agent.publish.dto.AckRequest;
 import com.bambi.service.agent.publish.dto.ClaimRequest;
 import com.bambi.service.agent.publish.dto.ClaimResponse;
 import com.bambi.service.agent.publish.dto.PublishItem;
+import com.bambi.service.agent.publish.dto.PublishItemFixture;
 import com.bambi.service.common.error.ApiException;
 import com.bambi.service.common.error.ErrorCode;
 import org.junit.jupiter.api.BeforeEach;
@@ -112,11 +113,11 @@ class RestClientPublishSnapshotClientTest {
     @Test
     @DisplayName("cover_image: HTTP(S)가 아닌 선택 필드는 이미지 없음으로 처리한다")
     void rejectsUnsafeCoverImageWithoutBreakingPublish() {
-        PublishItem item = new PublishItem(
-                "c1", "1", 1, "h1", "제목", "요약", "본문",
-                List.of(), List.of(), List.of(), null, null, null, null, null, null,
-                new PublishItem.CoverImage(
-                        "javascript:alert(1)", "https://ex.com", "출처", "G1"));
+        PublishItem item = PublishItemFixture.item()
+                .snapshotHash("h1")
+                .coverImage(new PublishItem.CoverImage(
+                        "javascript:alert(1)", "https://ex.com", "출처", "G1"))
+                .build();
 
         assertThat(item.normalizedCoverImage()).isNull();
     }
