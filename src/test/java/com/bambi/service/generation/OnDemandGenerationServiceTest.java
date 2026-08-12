@@ -270,4 +270,47 @@ class OnDemandGenerationServiceTest {
         assertThat(sent.get(0).idempotencyKey()).doesNotEndWith("-delta");
         assertThat(sent.get(1).idempotencyKey()).endsWith("-delta");
     }
+
+    // ---------- 주제별 멱등키 (2026-08-12 회귀 — 운영에서 발견) ----------
+
+    @Test
+    @DisplayName("같은 분에 다른 주제를 요청하면 멱등키가 갈려 각각 접수된다")
+    void differentTopicsInSameMinuteGetOwnKeys() {
+        when(interestService.existsByName(eq(28L), any())).thenReturn(true);
+        when(generationClient.requestGeneration(eq(28L), any())).thenReturn("job-1");
+
+        service.generateForUser(28L, "커리어·이직");
+        service.generateForUser(28L, "영화·드라마");
+
+        ArgumentCaptor<GenerationRequest> captor = ArgumentCaptor.forClass(GenerationRequest.class);
+        verify(generationClient, org.mockito.Mockito.times(2))
+                .requestGeneration(eq(28L), captor.capture());
+        List<GenerationRequest> sent = captor.getAllValues();
+        // 주제가 키에 없으면 두 요청이 같은 키가 되어 두 번째가 조용히 삼켜진다 —
+        // 사용자에겐 에러도 안 뜨고 "생성중"도 안 늘어난다.
+        // 운영 실측(2026-08-12): 홈 rail 에서 10회 눌렀는데 분이 바뀐 4건만 접수됨.
+        assertThat(sent.get(0).idempotencyKey()).isNotEqualTo(sent.get(1).idempotencyKey());
+        assertThat(sent.get(0).idempotencyKey()).contains("커리어·이직");
+        assertThat(sent.get(1).idempotencyKey()).contains("영화·드라마");
+    }
+
+    @Test
+    @DisplayName("같은 주제 연타는 같은 분이면 같은 멱등키 — 원래 의도(연타 방지) 유지")
+    void sameTopicRepeatKeepsSameKeyShape() {
+        when(interestService.existsByName(28L, "커리어·이직")).thenReturn(true);
+        when(generationClient.requestGeneration(eq(28L), any())).thenReturn("job-1");
+
+        service.generateForUser(28L, "커리어·이직");
+        service.generateForUser(28L, "커리어·이직");
+
+        ArgumentCaptor<GenerationRequest> captor = ArgumentCaptor.forClass(GenerationRequest.class);
+        verify(generationClient, org.mockito.Mockito.times(2))
+                .requestGeneration(eq(28L), captor.capture());
+        List<GenerationRequest> sent = captor.getAllValues();
+        // 분 경계를 넘는 순간을 테스트가 우연히 밟으면 키 끝의 분만 달라진다. 그래서
+        // 완전 일치 대신 "분 앞까지 같은 접두사"로 본다 — 검증 대상은 주제가 키에 들어갔는지다.
+        String prefix = "ondemand-28-interest_news_card-커리어·이직-";
+        assertThat(sent.get(0).idempotencyKey()).startsWith(prefix);
+        assertThat(sent.get(1).idempotencyKey()).startsWith(prefix);
+    }
 }

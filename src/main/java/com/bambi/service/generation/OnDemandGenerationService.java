@@ -85,7 +85,7 @@ public class OnDemandGenerationService {
         // 온디맨드는 아직 단일 주제다 — topic 이 실제 검색어다(고정 문구를 넣으면 안 된다).
         // 상위 3개 자동 선정 + 연결 분석 전환은 agent 통합 서술이 나온 뒤 별도 작업.
         GenerationRequest request = GenerationRequest.singleTopic(
-                onDemandKey(userId, changeHistory), topic, contentType,
+                onDemandKey(userId, topic, changeHistory), topic, contentType,
                 GenerationPendingService.REPORT_TYPE_ON_DEMAND, changeHistory);
         // agent 202 body 파싱 실패 시 null 일 수 있어 키로 쓰지 않는다 — 참고용으로만 내린다.
         GenerationSubmissionService.Submission submission = submissionService.submit(
@@ -127,15 +127,24 @@ public class OnDemandGenerationService {
     }
 
     /**
-     * on-demand 멱등키(분 단위) — 연타는 1건, 시간 지나면 새 생성.
+     * on-demand 멱등키(분 단위) — <b>같은 주제</b> 연타는 1건, 시간 지나면 새 생성.
      *
-     * <p>Delta 여부를 키에 섞는다. 안 섞으면 같은 분 안에서 토글해도 <b>멱등키가 같아
-     * agent 가 먼저 접수한 Job 을 그대로 돌려주고</b>, 사용자는 "켰는데 안 바뀐다"를 겪는다.
+     * <p><b>주제를 키에 섞는다(2026-08-12 수정).</b> 안 섞으면 같은 분 안에서 <b>다른 주제</b>를
+     * 눌러도 멱등키가 같아 agent 가 먼저 접수한 Job 을 그대로 돌려준다. 사용자에게는 에러도
+     * 안 뜨고 "생성중"도 안 늘어나서 <b>아무 일도 안 일어난 것처럼</b> 보인다
+     * (실측: 홈 rail 에서 10회 눌렀는데 분이 바뀔 때마다 1건씩, 총 4건만 접수됨).
+     * 원래 의도인 "같은 버튼 연타 방지"는 주제가 같으면 키가 같으므로 그대로 유지된다.
+     *
+     * <p>Delta 여부도 같은 이유로 섞는다. 안 섞으면 같은 분 안에서 토글해도 멱등키가 같아
+     * 사용자는 "켰는데 안 바뀐다"를 겪는다.
      * 꺼진 경우에는 접미사를 붙이지 않아 <b>기존 키 형식이 그대로 유지</b>된다(회귀 없음).
+     *
+     * <p>주제는 {@code resolveTopic} 이 내 관심사 목록에서 확정한 이름이라 임의 입력이 아니다.
+     * 키는 파싱 대상이 아니라 동일성 비교에만 쓰이므로 한글·구분자(·)가 들어가도 무방하다.
      */
-    private String onDemandKey(long userId, boolean changeHistory) {
+    private String onDemandKey(long userId, String topic, boolean changeHistory) {
         long minute = OffsetDateTime.now(KST).truncatedTo(ChronoUnit.MINUTES).toEpochSecond();
-        String base = "ondemand-" + userId + "-" + contentType + "-" + minute;
+        String base = "ondemand-" + userId + "-" + contentType + "-" + topic + "-" + minute;
         return changeHistory ? base + "-delta" : base;
     }
 }
