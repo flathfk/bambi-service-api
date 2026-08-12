@@ -125,38 +125,59 @@ class AdminDashboardServiceTest {
 
     /* ===== 리포트 생성 수명주기 (2026-08-12) ===== */
 
+    private static final List<String> ACTIVE = List.of("PENDING", "RUNNING", "PUBLISHING");
+
     @Test
-    @DisplayName("생성 현황은 접수 테이블에서 센다 — 진행 중은 기간을 안 자른다")
-    void generationsCountFromPendings() {
+    @DisplayName("생성 현황은 접수 테이블에서 세고, 진행 중과 정체를 나눈다")
+    void generationsSplitInProgressAndStalled() {
         givenLogs();
-        when(generationPendingRepository.countByStatusIn(
-                List.of("PENDING", "RUNNING", "PUBLISHING"))).thenReturn(8L);
+        when(generationPendingRepository.countByStatusInAndCreatedAtGreaterThanEqual(
+                eq(ACTIVE), any())).thenReturn(8L);
+        when(generationPendingRepository.countByStatusInAndCreatedAtLessThan(
+                eq(ACTIVE), any())).thenReturn(102L);
         when(generationPendingRepository.countByStatusInAndCreatedAtGreaterThanEqual(
                 eq(List.of("COMPLETED")), any())).thenReturn(103L);
         when(generationPendingRepository.countByStatusInAndCreatedAtGreaterThanEqual(
                 eq(List.of("FAILED", "CANCELLED")), any())).thenReturn(4L);
-        when(generationPendingRepository.averageCompletionSeconds(any())).thenReturn(94.0);
-        when(generationPendingRepository.maxCompletionSeconds(any())).thenReturn(764.0);
+        when(generationPendingRepository.medianCompletionSeconds(any())).thenReturn(528.0);
+        when(generationPendingRepository.maxCompletionSeconds(any())).thenReturn(20707.0);
 
         AdminDashboardResponse.Generations generations = service.getOverview().generations();
 
+        // 미종료를 전부 "진행 중"으로 합치면 110 이 되어 "밀렸지만 돌아간다"로 읽힌다.
+        // 운영 실측(2026-08-12): 그 102 건은 전부 2~5일 묵은 PUBLISHING 고아였다.
         assertThat(generations.inProgress()).isEqualTo(8);
+        assertThat(generations.stalled()).isEqualTo(102);
         assertThat(generations.completedToday()).isEqualTo(103);
         assertThat(generations.failedToday()).isEqualTo(4);
-        assertThat(generations.avgSeconds()).isEqualTo(94);
-        assertThat(generations.maxSeconds()).isEqualTo(764);
+        assertThat(generations.medianSeconds()).isEqualTo(528);
+        assertThat(generations.maxSeconds()).isEqualTo(20707);
+    }
+
+    @Test
+    @DisplayName("소요시간은 평균이 아니라 중앙값 — 이상치 한 건이 대표값을 흔들지 않게")
+    void usesMedianNotAverage() {
+        givenLogs();
+        // 실측: 101건 중 5시간 45분짜리 한 건이 평균을 16분으로 끌어올렸다(중앙값 8분 48초).
+        when(generationPendingRepository.medianCompletionSeconds(any())).thenReturn(528.0);
+        when(generationPendingRepository.maxCompletionSeconds(any())).thenReturn(20707.0);
+
+        AdminDashboardResponse.Generations generations = service.getOverview().generations();
+
+        assertThat(generations.medianSeconds()).isEqualTo(528);   // 보통 얼마나 걸리나
+        assertThat(generations.maxSeconds()).isEqualTo(20707);    // 꼬리는 따로 본다
     }
 
     @Test
     @DisplayName("완료 건이 없으면 소요시간은 null — 0 으로 내리면 '0초에 끝났다'로 읽힌다")
     void noCompletionsGiveNullSeconds() {
         givenLogs();
-        when(generationPendingRepository.averageCompletionSeconds(any())).thenReturn(null);
+        when(generationPendingRepository.medianCompletionSeconds(any())).thenReturn(null);
         when(generationPendingRepository.maxCompletionSeconds(any())).thenReturn(null);
 
         AdminDashboardResponse.Generations generations = service.getOverview().generations();
 
-        assertThat(generations.avgSeconds()).isNull();
+        assertThat(generations.medianSeconds()).isNull();
         assertThat(generations.maxSeconds()).isNull();
     }
 
@@ -164,13 +185,13 @@ class AdminDashboardServiceTest {
     @DisplayName("AI 호출 지표와 생성 소요시간은 서로 다른 것을 잰다")
     void aiLatencyAndGenerationSecondsAreDifferentMetrics() {
         // agent 는 생성 요청에 202 로 즉시 응답한다 — HTTP 왕복은 61ms 인데
-        // 실제 리포트는 94초 걸린다. 둘을 같은 칸에 놓으면 "AI 가 61ms" 로 읽힌다.
+        // 실제 리포트는 몇 분 걸린다. 둘을 같은 칸에 놓으면 "AI 가 61ms" 로 읽힌다.
         givenLogs(log(1, "SUCCESS", 61));
-        when(generationPendingRepository.averageCompletionSeconds(any())).thenReturn(94.0);
+        when(generationPendingRepository.medianCompletionSeconds(any())).thenReturn(528.0);
 
         AdminDashboardResponse overview = service.getOverview();
 
-        assertThat(overview.ai().avgLatencyMs()).isEqualTo(61);        // HTTP 접수 왕복
-        assertThat(overview.generations().avgSeconds()).isEqualTo(94); // 접수→카드
+        assertThat(overview.ai().avgLatencyMs()).isEqualTo(61);           // HTTP 접수 왕복
+        assertThat(overview.generations().medianSeconds()).isEqualTo(528); // 접수→카드
     }
 }

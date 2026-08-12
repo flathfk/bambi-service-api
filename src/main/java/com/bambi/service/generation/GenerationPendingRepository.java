@@ -48,23 +48,35 @@ public interface GenerationPendingRepository extends JpaRepository<GenerationPen
      * 운영에서 리포트가 20분씩 걸린 날, 화면에는 아무 이상이 안 보여 DB 를 직접 봐야 했다.
      * 접수부터 카드 발행까지의 수명주기는 이 테이블이 갖고 있으므로 여기서 센다. */
 
-    /** 아직 안 끝난 접수(대기·진행·발행중). 어제 것이 물려 있어도 보이도록 기간을 안 자른다. */
-    long countByStatusIn(List<String> statuses);
-
     long countByStatusInAndCreatedAtGreaterThanEqual(List<String> statuses, OffsetDateTime from);
 
     /**
-     * 오늘 완료분의 평균 소요(초) — 접수(created_at)부터 완료(completed_at)까지.
-     * 큐 대기까지 포함한 <b>사용자 체감 시간</b>이다. 완료 건이 없으면 null.
-     * numeric → Double 변환이 드라이버마다 갈리지 않게 SQL 에서 double precision 으로 못박는다.
+     * 기준 시각보다 오래된 미종료 접수 = <b>정체</b>.
+     *
+     * <p>"진행 중"과 갈라야 한다. 처음엔 미종료를 전부 진행 중으로 셌더니 운영에서 102건이
+     * 나왔는데, 전부 2~5일 묵은 채 PUBLISHING 에 멈춘 고아였다(2026-08-12). 그 상태로는
+     * "잘 돌아가는데 좀 밀렸네" 로 읽혀 정확히 반대 인상을 준다.
+     */
+    long countByStatusInAndCreatedAtLessThan(List<String> statuses, OffsetDateTime before);
+
+    /**
+     * 오늘 완료분의 <b>중앙값</b> 소요(초) — 접수(created_at)부터 완료(completed_at)까지.
+     * 큐 대기까지 포함한 사용자 체감 시간이다. 완료 건이 없으면 null.
+     *
+     * <p>평균이 아니라 중앙값이다. 운영 실측(2026-08-12): 101건 중 5시간 45분짜리 한 건이
+     * 평균을 16분으로 끌어올렸는데 중앙값은 8분 48초였다. 평균은 "보통 얼마나 걸리나"라는
+     * 질문에 답을 못 한다. 꼬리는 maxSeconds 로 따로 본다.
+     *
+     * <p>numeric → Double 변환이 드라이버마다 갈리지 않게 SQL 에서 double precision 으로 못박는다.
      */
     @Query(value = """
-            SELECT CAST(round(avg(EXTRACT(EPOCH FROM (completed_at - created_at)))) AS double precision)
+            SELECT CAST(round(percentile_cont(0.5) WITHIN GROUP (
+                       ORDER BY EXTRACT(EPOCH FROM (completed_at - created_at)))) AS double precision)
             FROM service.generation_pendings
             WHERE status = 'COMPLETED' AND completed_at IS NOT NULL
               AND created_at >= :from
             """, nativeQuery = true)
-    Double averageCompletionSeconds(@Param("from") OffsetDateTime from);
+    Double medianCompletionSeconds(@Param("from") OffsetDateTime from);
 
     /** 오늘 완료분 중 가장 오래 걸린 건(초). 평균만 보면 꼬리가 안 보여 함께 낸다. */
     @Query(value = """
