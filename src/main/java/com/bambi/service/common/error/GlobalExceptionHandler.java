@@ -33,7 +33,7 @@ public class GlobalExceptionHandler {
                 .body(ApiResponse.fail(new ErrorResponse(code.getCode(), e.getMessage())));
     }
 
-    /** @Valid 검증 실패 */
+    /** {@code @Valid} 검증 실패 */
     @ExceptionHandler(MethodArgumentNotValidException.class)
     public ResponseEntity<ApiResponse<Void>> handleValidation(MethodArgumentNotValidException e) {
         String message = e.getBindingResult().getFieldErrors().stream()
