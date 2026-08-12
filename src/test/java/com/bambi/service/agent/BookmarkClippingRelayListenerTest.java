@@ -7,6 +7,9 @@ import com.bambi.service.bookmark.BookmarkSavedEvent;
 import com.bambi.service.wiki.WikiBuildOperationService;
 import org.junit.jupiter.api.Test;
 
+import org.mockito.ArgumentCaptor;
+
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
@@ -22,14 +25,18 @@ import static org.mockito.Mockito.when;
  */
 class BookmarkClippingRelayListenerTest {
 
+    /** 클리퍼가 보내는 수준의 페이지 본문(운영 평균 4,213자) — 길이 기준을 넘긴다. */
+    private static final String PAGE_CONTENT =
+            "본문".repeat(BookmarkClippingRelayListener.MIN_PAGE_CONTENT_LENGTH);
+
     @Test
-    void URL과_본문이_모두_있으면_클리핑으로_중계한다() {
+    void URL과_페이지_본문이_모두_있으면_클리핑으로_중계한다() {
         AgentGateway gateway = mock(AgentGateway.class);
         WikiBuildOperationService operations = mock(WikiBuildOperationService.class);
         when(gateway.relayClipping(anyLong(), any())).thenReturn(new AgentAcceptedJob("job-1", "queued"));
         BookmarkClippingRelayListener listener = new BookmarkClippingRelayListener(gateway, operations);
 
-        listener.onBookmarkSaved(new BookmarkSavedEvent(1L, 42L, "https://ex.com/a", "제목", "본문"));
+        listener.onBookmarkSaved(new BookmarkSavedEvent(1L, 42L, "https://ex.com/a", "제목", PAGE_CONTENT));
 
         verify(gateway).relayClipping(eq(1L), any(AgentClippingRequest.class));
         verify(operations).register(eq(1L), eq("bookmark-42"), any(AgentAcceptedJob.class));
@@ -48,6 +55,67 @@ class BookmarkClippingRelayListenerTest {
         verify(gateway).relayUrlSource(eq(1L), any(AgentUrlSourceRequest.class));
         verify(operations).register(eq(1L), eq("bookmark-42"), any(AgentAcceptedJob.class));
         verify(gateway, never()).relayClipping(anyLong(), any());
+    }
+
+    @Test
+    void URL과_짧은_손메모면_클리핑이_아니라_URL_원천으로_보내_agent가_페이지를_읽게_한다() {
+        AgentGateway gateway = mock(AgentGateway.class);
+        WikiBuildOperationService operations = mock(WikiBuildOperationService.class);
+        when(gateway.relayUrlSource(anyLong(), any())).thenReturn(new AgentAcceptedJob("job-3", "queued"));
+        BookmarkClippingRelayListener listener = new BookmarkClippingRelayListener(gateway, operations);
+
+        // 실사례(bookmark 389): 호텔 프로모션 URL + 제목 "도쿄" + 본문 "도쿄 여행".
+        listener.onBookmarkSaved(new BookmarkSavedEvent(
+                1L, 389L, "https://www.hyatt.com/ko-KR/promo/tokyo", "도쿄", "도쿄 여행"));
+
+        ArgumentCaptor<AgentUrlSourceRequest> sent = ArgumentCaptor.forClass(AgentUrlSourceRequest.class);
+        verify(gateway).relayUrlSource(eq(1L), sent.capture());
+        verify(gateway, never()).relayClipping(anyLong(), any());
+        // 손메모를 버리지 않는다 — URL 내용과 사용자가 적은 키워드가 한 자료에 같이 들어가야 한다.
+        assertThat(sent.getValue().memo()).isEqualTo("도쿄 여행");
+        assertThat(sent.getValue().url()).isEqualTo("https://www.hyatt.com/ko-KR/promo/tokyo");
+    }
+
+    @Test
+    void 제목이_손메모에_없으면_제목도_함께_memo로_넘긴다() {
+        AgentGateway gateway = mock(AgentGateway.class);
+        WikiBuildOperationService operations = mock(WikiBuildOperationService.class);
+        when(gateway.relayUrlSource(anyLong(), any())).thenReturn(new AgentAcceptedJob("job-4", "queued"));
+        BookmarkClippingRelayListener listener = new BookmarkClippingRelayListener(gateway, operations);
+
+        listener.onBookmarkSaved(new BookmarkSavedEvent(1L, 42L, "https://ex.com/a", "출장 준비", "숙소"));
+
+        ArgumentCaptor<AgentUrlSourceRequest> sent = ArgumentCaptor.forClass(AgentUrlSourceRequest.class);
+        verify(gateway).relayUrlSource(eq(1L), sent.capture());
+        assertThat(sent.getValue().memo()).isEqualTo("출장 준비 숙소");
+    }
+
+    @Test
+    void URL만_있고_제목이_있으면_제목이_memo로_간다() {
+        AgentGateway gateway = mock(AgentGateway.class);
+        WikiBuildOperationService operations = mock(WikiBuildOperationService.class);
+        when(gateway.relayUrlSource(anyLong(), any())).thenReturn(new AgentAcceptedJob("job-5", "queued"));
+        BookmarkClippingRelayListener listener = new BookmarkClippingRelayListener(gateway, operations);
+
+        listener.onBookmarkSaved(new BookmarkSavedEvent(1L, 42L, "https://ex.com/a", "도쿄", null));
+
+        ArgumentCaptor<AgentUrlSourceRequest> sent = ArgumentCaptor.forClass(AgentUrlSourceRequest.class);
+        verify(gateway).relayUrlSource(eq(1L), sent.capture());
+        assertThat(sent.getValue().memo()).isEqualTo("도쿄");
+    }
+
+    @Test
+    void 제목도_본문도_없으면_memo는_비운다() {
+        AgentGateway gateway = mock(AgentGateway.class);
+        WikiBuildOperationService operations = mock(WikiBuildOperationService.class);
+        when(gateway.relayUrlSource(anyLong(), any())).thenReturn(new AgentAcceptedJob("job-6", "queued"));
+        BookmarkClippingRelayListener listener = new BookmarkClippingRelayListener(gateway, operations);
+
+        listener.onBookmarkSaved(new BookmarkSavedEvent(1L, 42L, "https://ex.com/a", "  ", null));
+
+        ArgumentCaptor<AgentUrlSourceRequest> sent = ArgumentCaptor.forClass(AgentUrlSourceRequest.class);
+        verify(gateway).relayUrlSource(eq(1L), sent.capture());
+        assertThat(sent.getValue().memo()).isNull();
     }
 
     @Test
@@ -70,7 +138,7 @@ class BookmarkClippingRelayListenerTest {
         BookmarkClippingRelayListener listener = new BookmarkClippingRelayListener(gateway, operations);
 
         assertThatCode(() -> listener.onBookmarkSaved(
-                new BookmarkSavedEvent(1L, 42L, "https://ex.com/a", "제목", "본문")))
+                new BookmarkSavedEvent(1L, 42L, "https://ex.com/a", "제목", PAGE_CONTENT)))
                 .doesNotThrowAnyException();
     }
 }
