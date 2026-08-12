@@ -8,6 +8,7 @@ import com.bambi.service.user.UserRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Duration;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.time.ZoneId;
@@ -41,6 +42,15 @@ public class AdminDashboardService {
 
     /** 실패로 볼 상태들. 사용자 취소도 "카드가 안 나온 접수"라 같이 센다. */
     private static final List<String> FAILED_STATUSES = List.of("FAILED", "CANCELLED");
+
+    /**
+     * 이 시간을 넘겨 미종료면 "진행 중"이 아니라 <b>정체</b>로 본다.
+     *
+     * <p>2시간인 이유: agent 리스가 10분이고 최대 3회 재시도라 순수 처리만 30분이 상한이다.
+     * 여기에 아침 브리핑이 07:00 에 한꺼번에 몰릴 때의 큐 대기(실측 40~45분)를 더해도
+     * 정상 건은 2시간 안에 끝난다. 실제로 문제였던 고아 건들은 2~5<b>일</b>이라 여유롭게 갈린다.
+     */
+    private static final Duration STALLED_AFTER = Duration.ofHours(2);
 
     private final UserRepository userRepository;
     private final ReportRepository reportRepository;
@@ -76,18 +86,19 @@ public class AdminDashboardService {
      * <p>AI 호출 지표(ai_*_logs)로는 이걸 못 본다 — 생성 요청은 agent 가 202 로 즉시 응답해
      * "호출 성공"으로 끝나기 때문이다. 실제로 리포트가 몇 분 걸렸는지, 큐에 몇 건이 물려 있는지는
      * 접수 테이블의 수명주기를 봐야 한다(2026-08-12 운영: 리포트 20분인데 대시보드는 정상 표시).
-     *
-     * <p>진행 중 건수만 기간을 안 자른다. 어제 물린 접수가 오늘 화면에서 사라지면
-     * 정확히 그 상황을 못 본다.
      */
     private AdminDashboardResponse.Generations summarizeGenerations(OffsetDateTime todayStart) {
+        OffsetDateTime stalledBefore = OffsetDateTime.now().minus(STALLED_AFTER);
         return new AdminDashboardResponse.Generations(
-                generationPendingRepository.countByStatusIn(IN_PROGRESS_STATUSES),
+                generationPendingRepository.countByStatusInAndCreatedAtGreaterThanEqual(
+                        IN_PROGRESS_STATUSES, stalledBefore),
+                generationPendingRepository.countByStatusInAndCreatedAtLessThan(
+                        IN_PROGRESS_STATUSES, stalledBefore),
                 generationPendingRepository.countByStatusInAndCreatedAtGreaterThanEqual(
                         List.of("COMPLETED"), todayStart),
                 generationPendingRepository.countByStatusInAndCreatedAtGreaterThanEqual(
                         FAILED_STATUSES, todayStart),
-                toSeconds(generationPendingRepository.averageCompletionSeconds(todayStart)),
+                toSeconds(generationPendingRepository.medianCompletionSeconds(todayStart)),
                 toSeconds(generationPendingRepository.maxCompletionSeconds(todayStart)));
     }
 

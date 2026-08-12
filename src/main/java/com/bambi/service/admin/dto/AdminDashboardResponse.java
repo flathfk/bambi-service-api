@@ -54,18 +54,23 @@ public record AdminDashboardResponse(
      * 아무 이상이 안 보였다. AI 호출은 전부 성공(202)이었기 때문이다. 큐가 밀렸는지·좀비가
      * 쌓였는지는 이 수명주기를 봐야 알 수 있다.
      *
-     * @param inProgress    아직 안 끝난 접수(PENDING·RUNNING·PUBLISHING). <b>기간 무관</b> —
-     *                      어제 것이 물려 있으면 그것도 보여야 한다.
+     * <p><b>진행 중과 정체를 가른다.</b> 처음엔 미종료 접수를 전부 "진행 중"으로 셌더니 운영에서
+     * 102건이 나왔는데, 전부 2~5일 묵은 채 PUBLISHING 에 멈춘 고아였다(2026-08-12).
+     * 그 상태로는 "잘 돌아가는데 좀 밀렸네" 로 읽혀 정확히 반대 인상을 준다.
+     *
+     * @param inProgress    최근 접수 중 아직 안 끝난 것 = 실제로 처리되고 있는 건
+     * @param stalled       기준 시간(2시간)을 넘겨 미종료로 남은 것 = <b>사람이 봐야 하는 것</b>
      * @param completedToday 오늘(KST) 접수분 중 완료된 건수
      * @param failedToday    오늘 접수분 중 실패·취소된 건수
-     * @param avgSeconds     오늘 완료분의 평균 소요(초). 큐 대기를 포함한 사용자 체감 시간. 없으면 null
-     * @param maxSeconds     오늘 완료분 중 최장 소요(초). 평균만 보면 꼬리가 안 보인다. 없으면 null
+     * @param medianSeconds  오늘 완료분의 <b>중앙값</b> 소요(초). 큐 대기 포함 = 사용자 체감. 없으면 null
+     * @param maxSeconds     오늘 완료분 중 최장 소요(초). 중앙값만 보면 꼬리가 안 보인다. 없으면 null
      */
     public record Generations(
             long inProgress,
+            long stalled,
             long completedToday,
             long failedToday,
-            Integer avgSeconds,
+            Integer medianSeconds,
             Integer maxSeconds) {
     }
 }
