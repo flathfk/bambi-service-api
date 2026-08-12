@@ -61,10 +61,14 @@ public class User {
     private boolean reportReadyNotification = true;
 
     // 변경점(Delta) 추적 계정 설정(V22, 김기용 08-10). 요청 단위 토글을 대체한다 —
-    // true 면 온디맨드 생성에 change_history_enabled 를 싣는다. 초기값 false 는 DB DEFAULT 와 일치
-    // (델타는 LLM 호출이 많은 경로라 명시적 opt-in).
+    // true 면 생성 요청에 change_history_enabled 를 싣는다.
+    //
+    // 초기값 true 는 DB DEFAULT(V30, 2026-08-12)와 일치한다. V22 때는 "LLM 호출이 많은 경로라
+    // 명시적 opt-in" 으로 false 였는데, 그러면 가입 직후 첫 보고서에 델타가 안 붙고 사용자가
+    // /settings 를 찾아 켜기 전까지 이 서비스의 핵심 값을 한 번도 못 본다. 델타는 "처음 받는
+    // 주제는 전체 내용" 으로 동작해 첫 보고서가 망가지지도 않는다 → opt-out 으로 뒤집었다.
     @Column(name = "change_history_enabled", nullable = false)
-    private boolean changeHistoryEnabled = false;
+    private boolean changeHistoryEnabled = true;
 
     @CreationTimestamp
     @Column(name = "created_at", nullable = false, updatable = false)
