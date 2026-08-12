@@ -42,6 +42,39 @@ public interface GenerationPendingRepository extends JpaRepository<GenerationPen
     List<GenerationPending> findByUserIdAndCreatedAtAfterOrderByCreatedAtDesc(
             Long userId, OffsetDateTime after);
 
+    /* ===== 관리자 대시보드 집계 (2026-08-12) =====
+     * AI "호출" 로그(ai_*_logs)는 service→agent HTTP 왕복만 잰다. 생성 요청은 agent 가 202 로
+     * 즉시 응답하므로 그 지표로는 <b>리포트가 실제로 몇 분 걸리는지·큐가 밀렸는지</b>를 알 수 없다.
+     * 운영에서 리포트가 20분씩 걸린 날, 화면에는 아무 이상이 안 보여 DB 를 직접 봐야 했다.
+     * 접수부터 카드 발행까지의 수명주기는 이 테이블이 갖고 있으므로 여기서 센다. */
+
+    /** 아직 안 끝난 접수(대기·진행·발행중). 어제 것이 물려 있어도 보이도록 기간을 안 자른다. */
+    long countByStatusIn(List<String> statuses);
+
+    long countByStatusInAndCreatedAtGreaterThanEqual(List<String> statuses, OffsetDateTime from);
+
+    /**
+     * 오늘 완료분의 평균 소요(초) — 접수(created_at)부터 완료(completed_at)까지.
+     * 큐 대기까지 포함한 <b>사용자 체감 시간</b>이다. 완료 건이 없으면 null.
+     * numeric → Double 변환이 드라이버마다 갈리지 않게 SQL 에서 double precision 으로 못박는다.
+     */
+    @Query(value = """
+            SELECT CAST(round(avg(EXTRACT(EPOCH FROM (completed_at - created_at)))) AS double precision)
+            FROM service.generation_pendings
+            WHERE status = 'COMPLETED' AND completed_at IS NOT NULL
+              AND created_at >= :from
+            """, nativeQuery = true)
+    Double averageCompletionSeconds(@Param("from") OffsetDateTime from);
+
+    /** 오늘 완료분 중 가장 오래 걸린 건(초). 평균만 보면 꼬리가 안 보여 함께 낸다. */
+    @Query(value = """
+            SELECT CAST(round(max(EXTRACT(EPOCH FROM (completed_at - created_at)))) AS double precision)
+            FROM service.generation_pendings
+            WHERE status = 'COMPLETED' AND completed_at IS NOT NULL
+              AND created_at >= :from
+            """, nativeQuery = true)
+    Double maxCompletionSeconds(@Param("from") OffsetDateTime from);
+
     List<GenerationPending> findByUserIdAndStatusInAndCreatedAtAfterOrderByCreatedAtDesc(
             Long userId, List<String> statuses, OffsetDateTime after);
 
