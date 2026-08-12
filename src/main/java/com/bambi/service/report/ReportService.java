@@ -34,10 +34,12 @@ public class ReportService {
         Report report = reportRepository.findByPublicIdAndDeletedAtIsNull(uuid)
                 .orElseThrow(() -> new ApiException(ErrorCode.NOT_FOUND, "리포트를 찾을 수 없습니다."));
 
-        boolean mine = viewerId != null && report.getUserId().equals(viewerId);
+        boolean releasedToOwner = viewerId != null
+                && report.getUserId().equals(viewerId)
+                && cardRepository.existsReleasedByReportIdAndUserId(report.getId(), viewerId);
         boolean publiclyLinked =
                 cardRepository.existsByReportIdAndVisibilityAndDeletedAtIsNull(report.getId(), PUBLIC);
-        if (!mine && !publiclyLinked) {
+        if (!releasedToOwner && !publiclyLinked) {
             // 비공개 남의 리포트 — 존재 노출 없이 404.
             throw new ApiException(ErrorCode.NOT_FOUND, "리포트를 찾을 수 없습니다.");
         }

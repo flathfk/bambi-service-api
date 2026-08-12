@@ -8,6 +8,7 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.OffsetDateTime;
 import java.util.UUID;
 
 /** 리포트 발행 완료 알림 생성과 사용자 Inbox 조회를 처리한다. */
@@ -35,13 +36,30 @@ public class NotificationService {
             String summary,
             UUID reportPublicId,
             String reportType) {
+        notifyReportReady(
+                userId, contentId, version, title, summary, reportPublicId,
+                reportType, OffsetDateTime.now());
+    }
+
+    /** 지정 노출 시각 전에는 Inbox 조회에 나타나지 않는 완료 알림을 만든다. */
+    @Transactional
+    public void notifyReportReady(
+            Long userId,
+            String contentId,
+            Integer version,
+            String title,
+            String summary,
+            UUID reportPublicId,
+            String reportType,
+            OffsetDateTime availableAt) {
         notificationRepository.insertReportReady(
                 userId,
                 "report-ready:" + contentId + ":v" + version,
                 truncate("새 리포트가 준비됐어요: " + title, 200),
                 truncate(summary, 500),
                 "/report/" + reportPublicId,
-                reportType);
+                reportType,
+                availableAt);
     }
 
     /**
