@@ -33,6 +33,25 @@ class UserServiceTest {
     }
 
     @Test
+    void 새_계정은_변경점_추적이_켜진_상태로_시작한다() {
+        // V30(2026-08-12) — 기본값을 opt-in(false)에서 opt-out(true)으로 뒤집었다.
+        // false 로 두면 가입 직후 첫 보고서에 델타가 안 붙고, 사용자가 /settings 를 찾아
+        // 켜기 전까지 "지난번 이후 뭐가 달라졌나"라는 핵심 값을 한 번도 못 본다.
+        // DB DEFAULT 와 엔티티 초기값이 어긋나면 가입 경로에 따라 값이 갈리므로 함께 고정한다.
+        assertThat(new User("new@bambi.local", "hash", "새사람").isChangeHistoryEnabled()).isTrue();
+    }
+
+    @Test
+    void 설정에서_변경점_추적을_끌_수_있다() {
+        User user = liveUser();
+        when(userRepository.findById(1L)).thenReturn(Optional.of(user));
+
+        service.updateSettings(1L, new UpdateSettingsRequest(null, null, false));
+
+        assertThat(user.isChangeHistoryEnabled()).isFalse();
+    }
+
+    @Test
     void 표시명과_소개를_반영하고_핸들은_소문자로_정규화한다() {
         User user = liveUser();
         when(userRepository.findById(1L)).thenReturn(Optional.of(user));
