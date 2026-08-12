@@ -12,8 +12,8 @@ import java.util.List;
  * <p><b>관심사 점수 상위 N개가 아니다.</b> 연결 수 상위를 그대로 쓰면 도구·출처가 주제가 되므로
  * (실측 {@code DBeaver Community} 1.00), agent 가 후보를 넓게 받아 맥락을 읽고 고른다.
  *
- * <p>{@code topics} 가 비면 <b>위키가 없거나 고를 만한 주제가 없는 사용자</b>다. 오류가 아니라
- * 정상 상태이며, 호출부는 등록 관심사 폴백으로 넘어간다.
+ * <p>{@code preparationStatus}가 {@code NOT_PREPARED}면 날짜별 Snapshot이 아직 없고,
+ * {@code READY}면서 {@code topics}가 비면 Wiki에서 고를 주제가 없는 정상 완료 상태다.
  *
  * <p>{@code reason} 은 agent 의 선정 근거다 — <b>로그·디버깅용이고 사용자에게 보이지 않는다.</b>
  * 아침 브리핑이 왜 그 주제를 골랐는지는 결과만 봐서는 알 수 없어서, 실패 조사 때 이 값이 필요하다.
@@ -22,10 +22,23 @@ import java.util.List;
 public record BriefingTopicsSelection(
         @JsonProperty("topics") List<String> topics,
         @JsonProperty("reason") String reason,
-        @JsonProperty("candidate_count") Integer candidateCount) {
+        @JsonProperty("candidate_count") Integer candidateCount,
+        @JsonProperty("preparation_status") BriefingPreparationStatus preparationStatus) {
 
-    public static BriefingTopicsSelection empty() {
-        return new BriefingTopicsSelection(List.of(), "", 0);
+    /** 기존 테스트·호출부용 준비 완료 생성자. */
+    public BriefingTopicsSelection(List<String> topics, String reason, Integer candidateCount) {
+        this(topics, reason, candidateCount, BriefingPreparationStatus.READY);
+    }
+
+    public static BriefingTopicsSelection notPrepared() {
+        return new BriefingTopicsSelection(
+                List.of(), "", 0, BriefingPreparationStatus.NOT_PREPARED);
+    }
+
+    /** Agent 구버전과의 롤링 배포 중에는 주제가 있으면 준비 완료로 간주한다. */
+    public boolean isPrepared() {
+        return preparationStatus == BriefingPreparationStatus.READY
+                || (preparationStatus == null && !normalizedTopics().isEmpty());
     }
 
     /** 고른 주제 — 공백·빈 값을 걸러 반환한다. 응답에 필드가 없어도 빈 목록이다. */

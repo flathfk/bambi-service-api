@@ -2,8 +2,6 @@ package com.bambi.service.briefing;
 
 import com.bambi.service.common.error.ApiException;
 import com.bambi.service.common.error.ErrorCode;
-import com.bambi.service.interest.InterestService;
-import com.bambi.service.interest.dto.InterestResponse;
 import com.bambi.service.wiki.AgentWikiClient;
 import com.bambi.service.wiki.dto.BriefingTopicsSelection;
 import org.slf4j.Logger;
@@ -39,62 +37,38 @@ public class BriefingTopicService {
     private static final Logger log = LoggerFactory.getLogger(BriefingTopicService.class);
 
     private final BriefingTopicRepository repository;
-    private final InterestService interestService;
     private final AgentWikiClient wikiClient;
 
     public BriefingTopicService(BriefingTopicRepository repository,
-                                InterestService interestService,
                                 AgentWikiClient wikiClient) {
         this.repository = repository;
-        this.interestService = interestService;
         this.wikiClient = wikiClient;
     }
 
     /**
-     * 아침 브리핑에 실제로 보낼 주제 — <b>폴백 2단계</b> (2026-08-11 (B) 확정).
-     *
-     * <ol>
-     *   <li>agent 가 개인 Wiki 맥락을 읽어 고른 주제
-     *       ({@code GET /internal/v1/users/{id}/briefing-topics})</li>
-     *   <li>비면 <b>등록 관심사</b>(온보딩에서 고른 것 + 직접 추가한 것) 최근 {@value #MAX_TOPICS}개</li>
-     *   <li>그것도 없으면 빈 목록 → 호출부가 건너뛴다</li>
-     * </ol>
+     * 아침 브리핑에 실제로 보낼 주제는 Agent가 개인 LLM Wiki에서 고른 결과만 사용한다.
      *
      * <p><b>1단계는 Wiki 태그 점수 상위 N개가 아니다.</b> 연결 수 상위를 그대로 쓰면 도구·출처가
      * 주제가 된다(agent-api #21 — 폭염 기사 1건으로 관심사 상위가 `서울`·`온열질환`·`질병관리청`이
      * 되고 아침 브리핑이 `서울` 로 나갔다. 실측 `DBeaver Community` 1.00). agent 가 후보를 넓게
      * 받아 맥락을 읽고 고르고, 민감 주제(자살·자해·재난 사망·정치인 실명)를 선정 단계에서 뺀다.
      *
-     * <p><b>폴백이 없으면 아침 브리핑이 전면 중단된다.</b> 위키가 없는 신규 사용자는 1단계가
-     * 항상 비어 있다.
-     *
-     * <p><b>agent 장애가 아침을 멈추지 않는다.</b> 호출이 실패하면 등록 관심사로 넘어간다 —
-     * 스케줄러는 전체 사용자를 도는 배치라, 여기서 예외를 올리면 agent 가 흔들릴 때 그날 아침이
-     * 통째로 날아간다. 등록 관심사는 service-db 값이라 agent 와 무관하게 읽힌다.
+     * <p>Snapshot 미준비와 준비 완료 후 빈 결과를 구분한다. Agent 장애는 숨기지 않고 호출부로
+     * 전달해 Outbox가 재시도하게 한다.
      */
     @Transactional(readOnly = true)
-    public List<String> resolveForMorningBriefing(Long userId) {
-        List<String> selected = selectFromWikiContext(userId);
-        return selected.isEmpty() ? fallbackInterests(userId) : selected;
+    public MorningBriefingTopics resolveForMorningBriefing(Long userId) {
+        return selectFromWikiContext(userId);
     }
 
-    /** 지정 브리핑 날짜에 준비된 주제를 읽고 없으면 등록 관심사로 폴백한다. */
+    /** 지정 브리핑 날짜에 준비된 개인 Wiki 주제와 준비 상태를 읽는다. */
     @Transactional(readOnly = true)
-    public List<String> resolveForMorningBriefing(Long userId, LocalDate briefingDate) {
-        List<String> selected = selectFromWikiContext(userId, briefingDate);
-        return selected.isEmpty() ? fallbackInterests(userId) : selected;
-    }
-
-    private List<String> fallbackInterests(Long userId) {
-        return interestService.list(userId).stream()
-                .map(InterestResponse::name)
-                .filter(name -> name != null && !name.isBlank())
-                .limit(MAX_TOPICS)
-                .toList();
+    public MorningBriefingTopics resolveForMorningBriefing(Long userId, LocalDate briefingDate) {
+        return selectFromWikiContext(userId, briefingDate);
     }
 
     /**
-     * 1단계 — agent 선정. 실패·빈 응답은 <b>빈 목록</b>으로 돌려 폴백에 맡긴다.
+     * Agent가 저장한 Wiki 선정 결과와 준비 상태를 읽는다.
      *
      * <p>선정 근거({@code reason})를 로그에 남긴다. 결과만 봐서는 왜 그 주제가 뽑혔는지 알 수 없어서,
      * "아침에 이상한 주제가 나갔다"는 신고가 들어왔을 때 이 줄이 유일한 단서다.
@@ -102,33 +76,32 @@ public class BriefingTopicService {
      * <p>REPORT-022부터 새벽 준비는 별도 비동기 Job이 담당하고, 이 메서드는 준비된 Snapshot을
      * 읽는 경계로만 남는다.
      */
-    public List<String> selectFromWikiContext(Long userId) {
+    public MorningBriefingTopics selectFromWikiContext(Long userId) {
         return selectFromWikiContext(
                 userId, () -> wikiClient.getBriefingTopics(userId, MAX_TOPICS));
     }
 
     /** 지정 날짜 Snapshot의 Agent 선정 결과를 읽는다. */
-    public List<String> selectFromWikiContext(Long userId, LocalDate briefingDate) {
+    public MorningBriefingTopics selectFromWikiContext(Long userId, LocalDate briefingDate) {
         return selectFromWikiContext(
                 userId,
                 () -> wikiClient.getBriefingTopics(userId, briefingDate, MAX_TOPICS));
     }
 
-    private List<String> selectFromWikiContext(
+    private MorningBriefingTopics selectFromWikiContext(
             Long userId,
             Supplier<BriefingTopicsSelection> selectionLoader) {
-        BriefingTopicsSelection selection;
-        try {
-            selection = selectionLoader.get();
-        } catch (RuntimeException e) {
-            // agent 장애로 그날 아침 전체가 멈추면 안 된다 — 등록 관심사로 넘어간다.
-            log.warn("[BriefingTopic] agent 주제 선정 실패 userId={} — 등록 관심사로 폴백", userId, e);
-            return List.of();
+        BriefingTopicsSelection selection = selectionLoader.get();
+        if (selection == null) {
+            throw new IllegalStateException("Agent 아침 브리핑 주제 응답이 없습니다.");
+        }
+        if (!selection.isPrepared()) {
+            log.info("[BriefingTopic] agent 준비 미완료 userId={}", userId);
+            return MorningBriefingTopics.notPrepared();
         }
         List<String> topics = selection.normalizedTopics();
         if (topics.isEmpty()) {
-            // 위키가 없거나 고를 만한 주제가 없는 사용자. 정상 상태라 warn 을 남기지 않는다.
-            return List.of();
+            return MorningBriefingTopics.ready(List.of());
         }
         // 개수는 agent 계약(limit)이 이미 지키지만, 계약이 바뀌어도 요청이 커지지 않게 여기서도 자른다.
         List<String> limited = topics.size() > MAX_TOPICS
@@ -136,7 +109,7 @@ public class BriefingTopicService {
                 : topics;
         log.info("[BriefingTopic] agent 선정 userId={}, topics={}, 후보={}, 근거={}",
                 userId, limited, selection.candidateCount(), selection.reasonOrEmpty());
-        return limited;
+        return MorningBriefingTopics.ready(limited);
     }
 
     /** 내 선택값 — 미선택이면 빈 목록(404 아님). 화면 진입 시 이 값으로 선택 상태를 복구한다. */

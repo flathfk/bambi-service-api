@@ -1,6 +1,8 @@
 package com.bambi.service.generation;
 
 import com.bambi.service.briefing.BriefingTopicService;
+import com.bambi.service.briefing.BriefingPreparationPendingException;
+import com.bambi.service.briefing.MorningBriefingTopics;
 import com.bambi.service.generation.dto.GenerationRequest;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
@@ -14,7 +16,7 @@ import java.util.Optional;
  * 사용자 한 명의 아침 브리핑 주제를 확정하고 공통 생성 접수 경로로 제출한다.
  *
  * <p>정기 스케줄러와 개발용 즉시 생성 API가 이 서비스를 함께 사용한다. 호출 경로가 달라도
- * Wiki 문맥 선정·등록 관심사 폴백·다중 주제 요청 조립 규칙이 달라지지 않게 하는 경계다.
+ * Wiki 문맥 선정·준비 상태·다중 주제 요청 조립 규칙이 달라지지 않게 하는 경계다.
  */
 @Service
 public class MorningBriefingGenerationService {
@@ -40,8 +42,8 @@ public class MorningBriefingGenerationService {
     }
 
     /**
-     * 아침 브리핑을 즉시 접수한다. 생성할 주제가 없으면 Agent에 고정 제목을 검색어로 보내지 않고
-     * 빈 결과를 반환한다. 멱등키의 시간 창은 스케줄러·개발 API 등 호출자가 소유한다.
+     * 준비된 아침 브리핑을 접수한다. 생성할 주제가 없으면 Agent에 고정 제목을 검색어로 보내지 않고
+     * 빈 결과를 반환하며, 미준비 상태는 호출자가 재시도할 수 있게 예외로 알린다.
      */
     public Optional<GenerationSubmissionService.Submission> submit(
             long userId,
@@ -54,7 +56,52 @@ public class MorningBriefingGenerationService {
             long userId,
             String idempotencyKey,
             LocalDate briefingDate) {
-        List<String> topics = briefingTopicService.resolveForMorningBriefing(userId, briefingDate);
+        MorningBriefingTopics resolved =
+                briefingTopicService.resolveForMorningBriefing(userId, briefingDate);
+        if (!resolved.prepared()) {
+            throw new BriefingPreparationPendingException(userId);
+        }
+        return submitResolved(userId, idempotencyKey, briefingDate, resolved.topics());
+    }
+
+    /** 즉시 생성은 미준비 상태도 Agent Job 안에서 Wiki 준비 후 생성을 이어간다. */
+    public Optional<GenerationSubmissionService.Submission> submitWithPreparation(
+            long userId,
+            String idempotencyKey) {
+        return submitWithPreparation(userId, idempotencyKey, LocalDate.now(KST));
+    }
+
+    /** 지정 날짜의 즉시 생성에서 미준비 Snapshot을 비동기 Wiki 준비와 연결한다. */
+    public Optional<GenerationSubmissionService.Submission> submitWithPreparation(
+            long userId,
+            String idempotencyKey,
+            LocalDate briefingDate) {
+        MorningBriefingTopics resolved =
+                briefingTopicService.resolveForMorningBriefing(userId, briefingDate);
+        if (resolved.prepared()) {
+            return submitResolved(userId, idempotencyKey, briefingDate, resolved.topics());
+        }
+
+        boolean changeHistory = changeHistorySettings.isEnabled(userId);
+        GenerationRequest request = GenerationRequest.wikiBriefing(
+                deltaAwareKey(idempotencyKey, changeHistory),
+                TITLE_TOPIC,
+                contentType,
+                GenerationPendingService.REPORT_TYPE_MORNING_BRIEFING,
+                briefingDate,
+                changeHistory);
+        return Optional.of(submissionService.submit(
+                userId,
+                request,
+                GenerationPendingService.REPORT_TYPE_MORNING_BRIEFING,
+                TITLE_TOPIC));
+    }
+
+    private Optional<GenerationSubmissionService.Submission> submitResolved(
+            long userId,
+            String idempotencyKey,
+            LocalDate briefingDate,
+            List<String> topics) {
         if (topics.isEmpty()) {
             return Optional.empty();
         }

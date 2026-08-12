@@ -105,6 +105,21 @@ class GenerationRequestTest {
     }
 
     @Test
+    void 미준비_즉시_아침_브리핑은_Wiki_scope와_날짜만_보낸다() throws Exception {
+        GenerationRequest request = GenerationRequest.wikiBriefing(
+                "key-1", "오늘의 관심사 브리핑", "interest_news_card",
+                "MORNING_BRIEFING", LocalDate.of(2026, 8, 12), false);
+
+        String json = mapper.writeValueAsString(request);
+
+        assertThat(json).contains("\"generation_scope\":\"WIKI_BRIEFING\"");
+        assertThat(json).contains("\"topic\":\"오늘의 관심사 브리핑\"");
+        assertThat(json).contains("\"briefing_date\":\"2026-08-12\"");
+        assertThat(json).doesNotContain("\"interest_id\"");
+        assertThat(json).doesNotContain("\"topics\"");
+    }
+
+    @Test
     void 주제가_비면_제목용_문구만_남으므로_만들지_못하게_막는다() {
         // 이대로 나가면 "오늘의 관심사 브리핑" 이 실제 검색어가 되어 엉뚱한 기사를 물어온다.
         assertThatThrownBy(() -> GenerationRequest.multiTopic(

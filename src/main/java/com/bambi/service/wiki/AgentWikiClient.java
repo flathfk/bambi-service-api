@@ -51,18 +51,17 @@ public class AgentWikiClient {
     /**
      * 아침 브리핑에 쓸 주제 — agent 가 개인 Wiki 맥락을 읽어 고른다 (2026-08-11 계약).
      *
-     * <p>위키가 없는 사용자는 agent 가 404 를 준다. 그건 오류가 아니라 <b>정상 상태</b>라
-     * 빈 결과로 바꿔 돌려주고, 호출부가 등록 관심사 폴백으로 넘어간다({@code getTags} 와 같은 정책).
+     * <p>위키가 없는 사용자의 404는 날짜별 준비가 없다는 {@code NOT_PREPARED}로 정규화한다.
      *
      * <p>REPORT-022부터 이 GET은 준비 Worker가 저장한 Snapshot만 읽으며 LLM·외부 검색을
-     * 호출하지 않는다. Snapshot이 없으면 빈 결과를 반환해 등록 관심사 폴백으로 넘어간다.
+     * 호출하지 않는다. Snapshot이 없으면 {@code NOT_PREPARED}를 반환한다.
      *
      * @param limit agent 계약상 1~5
      */
     public BriefingTopicsSelection getBriefingTopics(long userId, int limit) {
         return getOrEmpty(
                 "/users/" + userId + "/briefing-topics?limit=" + limit,
-                BriefingTopicsSelection.class, BriefingTopicsSelection.empty());
+                BriefingTopicsSelection.class, BriefingTopicsSelection.notPrepared());
     }
 
     /** 지정 KST 날짜에 준비된 아침 브리핑 주제를 DB에서 조회한다. */
@@ -73,7 +72,7 @@ public class AgentWikiClient {
         return getOrEmpty(
                 "/users/" + userId + "/briefing-topics?briefing_date=" + briefingDate
                         + "&limit=" + limit,
-                BriefingTopicsSelection.class, BriefingTopicsSelection.empty());
+                BriefingTopicsSelection.class, BriefingTopicsSelection.notPrepared());
     }
 
     /** 지정일 주제 선정과 Wiki·Global·Live 근거 예열을 비동기 Job으로 접수한다. */
