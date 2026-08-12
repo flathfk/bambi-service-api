@@ -12,6 +12,7 @@ public record AdminDashboardResponse(
         Users users,
         Reports reports,
         AiCalls ai,
+        Generations generations,                // 리포트 생성 수명주기(접수→카드)
         List<AdminAiLogResponse> recentFailures // 최근 실패한 AI 호출(최신순 일부)
 ) {
 
@@ -40,5 +41,31 @@ public record AdminDashboardResponse(
             long processing,
             int successRate,
             Integer avgLatencyMs) {
+    }
+
+    /**
+     * 리포트 생성 수명주기 집계 — <b>접수(PENDING)부터 카드 발행(COMPLETED)까지</b>.
+     *
+     * <p>{@link AiCalls#avgLatencyMs} 와 재는 것이 다르다. 그쪽은 service→agent <b>HTTP 왕복</b>이고,
+     * 생성 요청은 agent 가 202 로 즉시 응답하므로 수십 ms 로 나온다. 실제 리포트는 1~2분 걸린다.
+     * 두 숫자를 같은 것으로 읽으면 "AI 가 61ms 만에 처리한다"는 오해가 생긴다.
+     *
+     * <p>이 집계가 필요한 이유: 2026-08-12 운영에서 리포트가 20분씩 걸렸는데 대시보드에는
+     * 아무 이상이 안 보였다. AI 호출은 전부 성공(202)이었기 때문이다. 큐가 밀렸는지·좀비가
+     * 쌓였는지는 이 수명주기를 봐야 알 수 있다.
+     *
+     * @param inProgress    아직 안 끝난 접수(PENDING·RUNNING·PUBLISHING). <b>기간 무관</b> —
+     *                      어제 것이 물려 있으면 그것도 보여야 한다.
+     * @param completedToday 오늘(KST) 접수분 중 완료된 건수
+     * @param failedToday    오늘 접수분 중 실패·취소된 건수
+     * @param avgSeconds     오늘 완료분의 평균 소요(초). 큐 대기를 포함한 사용자 체감 시간. 없으면 null
+     * @param maxSeconds     오늘 완료분 중 최장 소요(초). 평균만 보면 꼬리가 안 보인다. 없으면 null
+     */
+    public record Generations(
+            long inProgress,
+            long completedToday,
+            long failedToday,
+            Integer avgSeconds,
+            Integer maxSeconds) {
     }
 }

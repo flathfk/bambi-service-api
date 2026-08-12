@@ -2,6 +2,7 @@ package com.bambi.service.admin;
 
 import com.bambi.service.admin.dto.AdminAiLogResponse;
 import com.bambi.service.admin.dto.AdminDashboardResponse;
+import com.bambi.service.generation.GenerationPendingRepository;
 import com.bambi.service.report.ReportRepository;
 import com.bambi.service.user.UserRepository;
 import org.springframework.stereotype.Service;
@@ -35,16 +36,25 @@ public class AdminDashboardService {
     /** 대시보드에 미리보기로 띄울 최근 실패 건수. 자세히는 로그 화면(?status=FAILED)에서 본다. */
     private static final int RECENT_FAILURE_LIMIT = 5;
 
+    /** 아직 안 끝난 접수로 볼 상태들. 완료·실패·취소만 종료로 친다. */
+    private static final List<String> IN_PROGRESS_STATUSES = List.of("PENDING", "RUNNING", "PUBLISHING");
+
+    /** 실패로 볼 상태들. 사용자 취소도 "카드가 안 나온 접수"라 같이 센다. */
+    private static final List<String> FAILED_STATUSES = List.of("FAILED", "CANCELLED");
+
     private final UserRepository userRepository;
     private final ReportRepository reportRepository;
     private final AdminAiLogService adminAiLogService;
+    private final GenerationPendingRepository generationPendingRepository;
 
     public AdminDashboardService(UserRepository userRepository,
                                  ReportRepository reportRepository,
-                                 AdminAiLogService adminAiLogService) {
+                                 AdminAiLogService adminAiLogService,
+                                 GenerationPendingRepository generationPendingRepository) {
         this.userRepository = userRepository;
         this.reportRepository = reportRepository;
         this.adminAiLogService = adminAiLogService;
+        this.generationPendingRepository = generationPendingRepository;
     }
 
     @Transactional(readOnly = true)
@@ -56,7 +66,34 @@ public class AdminDashboardService {
                 countUsers(todayStart),
                 countReports(todayStart),
                 summarizeAiCalls(logs),
+                summarizeGenerations(todayStart),
                 recentFailures(logs));
+    }
+
+    /**
+     * 리포트 생성 수명주기(접수→카드) 집계.
+     *
+     * <p>AI 호출 지표(ai_*_logs)로는 이걸 못 본다 — 생성 요청은 agent 가 202 로 즉시 응답해
+     * "호출 성공"으로 끝나기 때문이다. 실제로 리포트가 몇 분 걸렸는지, 큐에 몇 건이 물려 있는지는
+     * 접수 테이블의 수명주기를 봐야 한다(2026-08-12 운영: 리포트 20분인데 대시보드는 정상 표시).
+     *
+     * <p>진행 중 건수만 기간을 안 자른다. 어제 물린 접수가 오늘 화면에서 사라지면
+     * 정확히 그 상황을 못 본다.
+     */
+    private AdminDashboardResponse.Generations summarizeGenerations(OffsetDateTime todayStart) {
+        return new AdminDashboardResponse.Generations(
+                generationPendingRepository.countByStatusIn(IN_PROGRESS_STATUSES),
+                generationPendingRepository.countByStatusInAndCreatedAtGreaterThanEqual(
+                        List.of("COMPLETED"), todayStart),
+                generationPendingRepository.countByStatusInAndCreatedAtGreaterThanEqual(
+                        FAILED_STATUSES, todayStart),
+                toSeconds(generationPendingRepository.averageCompletionSeconds(todayStart)),
+                toSeconds(generationPendingRepository.maxCompletionSeconds(todayStart)));
+    }
+
+    /** 완료 건이 없으면 집계가 null 이다 — 0 으로 바꾸지 않는다(0초로 오해된다). */
+    private Integer toSeconds(Double value) {
+        return value == null ? null : (int) Math.round(value);
     }
 
     /**
