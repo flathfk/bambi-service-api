@@ -54,7 +54,7 @@ class OAuthServiceTest {
         String challenge = Base64.getUrlEncoder().withoutPadding().encodeToString(
                 MessageDigest.getInstance("SHA-256").digest(verifier.getBytes(StandardCharsets.UTF_8)));
         service.beginAuthorization("code", registered.clientId(),
-                "https://chatgpt.com/aip/callback", "wiki:read", "state-value",
+                "https://chatgpt.com/aip/callback", "wiki:write wiki:read", "state-value",
                 challenge, "S256", "https://bambi.test/mcp");
 
         ArgumentCaptor<OAuthAuthorization> authorizationCaptor =
@@ -73,7 +73,7 @@ class OAuthServiceTest {
                 verifier, "https://bambi.test/mcp");
         assertThat(issued.accessToken()).startsWith("bmb_oauth_");
         assertThat(issued.refreshToken()).startsWith("bmb_refresh_");
-        assertThat(issued.scope()).isEqualTo("wiki:read");
+        assertThat(issued.scope()).isEqualTo("wiki:read wiki:write");
 
         ArgumentCaptor<OAuthToken> tokenCaptor = ArgumentCaptor.forClass(OAuthToken.class);
         org.mockito.Mockito.verify(tokens).save(tokenCaptor.capture());
@@ -84,6 +84,7 @@ class OAuthServiceTest {
         assertThat(introspected.active()).isTrue();
         assertThat(introspected.sub()).isEqualTo("42");
         assertThat(introspected.clientId()).isEqualTo(registered.clientId());
+        assertThat(introspected.scope()).isEqualTo("wiki:read wiki:write");
         assertThat(introspected.aud()).isEqualTo("https://bambi.test/mcp");
 
         OAuthToken storedToken = tokenCaptor.getValue();
@@ -107,7 +108,40 @@ class OAuthServiceTest {
                 .containsEntry("issuer", "https://bambi.test/")
                 .containsEntry("registration_endpoint", "https://bambi.test/api/oauth/register")
                 .containsEntry("token_endpoint_auth_methods_supported", List.of("none"))
-                .containsEntry("code_challenge_methods_supported", List.of("S256"));
+                .containsEntry("code_challenge_methods_supported", List.of("S256"))
+                .containsEntry("scopes_supported", List.of("wiki:read", "wiki:write"));
+    }
+
+    @Test
+    void authorizationKeepsReadOnlyCompatibilityAndRejectsWriteOnlyScope() {
+        OAuthClient client = new OAuthClient(
+                "bmb_client_test",
+                "Test Client",
+                java.util.Set.of("https://client.test/callback"),
+                java.time.OffsetDateTime.now()
+        );
+        when(clients.findById("bmb_client_test")).thenReturn(Optional.of(client));
+        when(authorizations.save(any(OAuthAuthorization.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+        String challenge = "a".repeat(43);
+
+        service.beginAuthorization(
+                "code", "bmb_client_test", "https://client.test/callback", "wiki:read",
+                "read-state", challenge, "S256", "https://bambi.test/mcp"
+        );
+        ArgumentCaptor<OAuthAuthorization> authorizationCaptor =
+                ArgumentCaptor.forClass(OAuthAuthorization.class);
+        org.mockito.Mockito.verify(authorizations).save(authorizationCaptor.capture());
+        assertThat(authorizationCaptor.getValue().getScope()).isEqualTo("wiki:read");
+
+        assertThatThrownBy(() -> service.beginAuthorization(
+                "code", "bmb_client_test", "https://client.test/callback", "wiki:write",
+                "write-state", challenge, "S256", "https://bambi.test/mcp"
+        ))
+                .isInstanceOf(OAuthRedirectException.class)
+                .satisfies(exception -> assertThat(
+                        ((OAuthRedirectException) exception).getRedirectUrl()
+                ).contains("error=invalid_scope"));
     }
 
     private String queryParam(String url, String name) {
