@@ -34,7 +34,9 @@ import java.util.UUID;
 @Service
 public class OAuthService {
 
-    private static final String SCOPE = "wiki:read";
+    private static final String READ_SCOPE = "wiki:read";
+    private static final String WRITE_SCOPE = "wiki:write";
+    private static final Set<String> SUPPORTED_SCOPES = Set.of(READ_SCOPE, WRITE_SCOPE);
     private static final SecureRandom RANDOM = new SecureRandom();
 
     private final OAuthClientRepository clientRepository;
@@ -91,7 +93,7 @@ public class OAuthService {
                 "grant_types_supported", List.of("authorization_code", "refresh_token"),
                 "token_endpoint_auth_methods_supported", List.of("none"),
                 "code_challenge_methods_supported", List.of("S256"),
-                "scopes_supported", List.of(SCOPE)
+                "scopes_supported", List.of(READ_SCOPE, WRITE_SCOPE)
         );
     }
 
@@ -128,8 +130,16 @@ public class OAuthService {
         if (state != null && state.length() > 1000) {
             throw redirectError(redirectUri, null, "invalid_request", "state가 너무 깁니다.");
         }
-        if (!SCOPE.equals(normalizeScope(scope))) {
-            throw redirectError(redirectUri, state, "invalid_scope", "wiki:read scope만 지원합니다.");
+        String normalizedScope = normalizeScope(scope);
+        Set<String> requestedScopes = Set.of(normalizedScope.split(" "));
+        if (!SUPPORTED_SCOPES.containsAll(requestedScopes)
+                || requestedScopes.contains(WRITE_SCOPE) && !requestedScopes.contains(READ_SCOPE)) {
+            throw redirectError(
+                    redirectUri,
+                    state,
+                    "invalid_scope",
+                    "wiki:write는 wiki:read와 함께 요청해야 합니다."
+            );
         }
         if (!"S256".equals(codeChallengeMethod) || !isPkceValue(codeChallenge)) {
             throw redirectError(redirectUri, state, "invalid_request", "PKCE S256 code_challenge가 필요합니다.");
@@ -140,7 +150,7 @@ public class OAuthService {
 
         OffsetDateTime now = now();
         OAuthAuthorization authorization = new OAuthAuthorization(
-                "bmb_auth_" + randomValue(24), clientId, redirectUri, state, SCOPE, resource,
+                "bmb_auth_" + randomValue(24), clientId, redirectUri, state, normalizedScope, resource,
                 codeChallenge, now, now.plusMinutes(authorizationRequestMinutes));
         authorizationRepository.save(authorization);
         return UriComponentsBuilder.fromUriString(authorizationPageUrl)
@@ -376,7 +386,7 @@ public class OAuthService {
     }
 
     private String normalizeScope(String scope) {
-        if (scope == null || scope.isBlank()) return SCOPE;
+        if (scope == null || scope.isBlank()) return READ_SCOPE;
         return String.join(" ", Arrays.stream(scope.trim().split("\\s+"))
                 .distinct().sorted().toList());
     }
