@@ -8,6 +8,8 @@
 
 사용자가 쓰는 **service**와 AI가 도는 **agent** 사이의 연동 전부를 맡았습니다.
 
+🔗 **배포** — [hktoss.elixirevo.com](https://hktoss.elixirevo.com/) (`/api` 가 이 레포) · [전체 아키텍처 다이어그램](https://github.com/flathfk/bambi#전체-시스템-아키텍처)
+
 ---
 
 # 트러블슈팅
